@@ -1,0 +1,130 @@
+"use client";
+import { RoutePlan, TransportSegment } from "@/lib/types/route";
+
+const MODE_LABELS: Record<string, string> = {
+  car: "Auto / Bus",
+  bus: "Bus",
+  plane: "Vuelo",
+  walk: "A pie",
+  bike: "Bici",
+  ferry: "Barco",
+};
+
+function ViabilityDot({ minutes }: { minutes: number }) {
+  if (minutes <= 240) return <span title="Viable" className="w-2.5 h-2.5 rounded-full bg-[#6B8E6B] inline-block" />;
+  if (minutes <= 600) return <span title="Tramo largo" className="w-2.5 h-2.5 rounded-full bg-[#C4A35A] inline-block" />;
+  return <span title="Tramo muy largo" className="w-2.5 h-2.5 rounded-full bg-[#B85C5C] inline-block" />;
+}
+
+function PriceBadge({ seg }: { seg: TransportSegment }) {
+  if (!seg.price) return null;
+  const { amount, currency, freshness, verifiedAt } = seg.price;
+  const label =
+    freshness === "pending"
+      ? "verificando…"
+      : verifiedAt
+      ? `${currency} ${amount.toLocaleString("es-AR")}`
+      : `${currency} ${amount.toLocaleString("es-AR")}`;
+
+  const color =
+    freshness === "live"
+      ? "text-[#6B8E6B]"
+      : freshness === "pending"
+      ? "text-[#C4A35A]"
+      : "text-[#8a8a8a]";
+
+  return (
+    <span className={`font-mono text-xs ${color}`} title={verifiedAt ?? ""}>
+      {label}
+    </span>
+  );
+}
+
+interface Props {
+  plan: RoutePlan | null;
+  scrapePending?: boolean;
+  freshnessLabel?: string;
+}
+
+export default function RouteLedger({ plan, scrapePending, freshnessLabel }: Props) {
+  if (!plan) {
+    return (
+      <div className="p-4 text-sm text-[#8a8a8a] italic">
+        El itinerario aparecerá aquí una vez que pidas una ruta al Gatito.
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-[#1a1a1a]">Itinerario</h3>
+        {scrapePending && (
+          <span className="text-xs text-[#C4A35A] animate-pulse">
+            Buscando precios…
+          </span>
+        )}
+        {!scrapePending && freshnessLabel && (
+          <span className="text-xs text-[#6B8E6B]">{freshnessLabel}</span>
+        )}
+      </div>
+
+      {plan.transportSegments.map((seg, i) => (
+        <div
+          key={i}
+          className="flex items-start gap-3 p-3 rounded-lg bg-[#FFFFFF] border border-[#E8E8E8]"
+        >
+          <ViabilityDot minutes={seg.durationMinutes} />
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium text-[#1a1a1a] truncate">
+              {seg.from.name} → {seg.to.name}
+            </div>
+            <div className="flex flex-wrap gap-2 mt-1 text-xs text-[#5c5c5c]">
+              <span>{MODE_LABELS[seg.mode] ?? seg.mode}</span>
+              <span>·</span>
+              <span>{seg.durationMinutes} min</span>
+              {seg.distanceKm && (
+                <>
+                  <span>·</span>
+                  <span>{seg.distanceKm} km</span>
+                </>
+              )}
+              {seg.transitProvider && (
+                <>
+                  <span>·</span>
+                  <span>{seg.transitProvider}</span>
+                </>
+              )}
+            </div>
+            {seg.price && (
+              <div className="mt-1">
+                <PriceBadge seg={seg} />
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+
+      {plan.weather && (
+        <div className="p-3 rounded-lg bg-[#f5f0e8] border border-[#e0d5c0] text-xs text-[#5c5c5c]">
+          <span className="font-medium">Clima:</span>{" "}
+          {plan.weather.temperatureC}°C, {plan.weather.condition} · {" "}
+          Viento {plan.weather.windKmh} km/h
+        </div>
+      )}
+
+      {plan.transitFeeds.length > 0 && (
+        <div className="text-xs text-[#8a8a8a]">
+          Operadores: {plan.transitFeeds.map((f) => f.operatorName).join(", ")}
+        </div>
+      )}
+
+      <div className="text-xs text-[#8a8a8a] pt-2 border-t border-[#E8E8E8]">
+        Presupuesto estimado: {plan.estimatedBudget.currency}{" "}
+        {plan.estimatedBudget.amount > 0
+          ? plan.estimatedBudget.amount.toLocaleString("es-AR")
+          : "calculando…"}
+      </div>
+    </div>
+  );
+}

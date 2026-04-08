@@ -1,0 +1,62 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model RouteIndex {
+  id          String   @id @default(cuid())
+  creatorWallet String
+  tokenId     String
+  ipfsCid     String
+  aiSynthesis String?  @db.Text
+  tags        String[]
+  originName  String
+  destName    String
+  createdAt   DateTime @default(now())
+
+  @@index([creatorWallet])
+  @@map("routes_index")
+}
+
+model ContactRequest {
+  id           String   @id @default(cuid())
+  travelerWallet String
+  hostWallet   String
+  templateType String   // "stay" | "availability" | "exchange"
+  note         String?  @db.VarChar(140)
+  routeId      String?  // optional: reference to active route tokenId
+  status       String   @default("pending") // "pending" | "available" | "unavailable" | "ask_more"
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([travelerWallet])
+  @@index([hostWallet])
+  @@map("contact_requests")
+}
+
+model ScrapeJob {
+  id          String   @id // job UUID
+  sessionId   String
+  origin      String
+  destination String
+  status      String   @default("queued")
+  resultJson  String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([sessionId])
+  @@map("scrape_jobs")
+}
+
+model PriceCache {
+  id          String   @id @default(cuid())
+  route       String   // "origin|destination"
+  pricesJson  String   @db.Text
+  scrapedAt   DateTime @default(now())
+
+  @@index([route])
+  @@map("price_cache")
+}

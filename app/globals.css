@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+:root {
+  --font-inter: "Inter", system-ui, sans-serif;
+}
+
+body {
+  font-family: var(--font-inter);
+}
+
+/* Leaflet z-index fix inside Next.js */
+.leaflet-pane,
+.leaflet-tile,
+.leaflet-marker-icon,
+.leaflet-marker-shadow,
+.leaflet-tile-pane,
+.leaflet-overlay-pane,
+.leaflet-shadow-pane,
+.leaflet-marker-pane,
+.leaflet-tooltip-pane,
+.leaflet-popup-pane {
+  z-index: 10 !important;
+}
+.leaflet-control {
+  z-index: 20 !important;
+}
+
+/* Pixel art image rendering */
+img[style*="pixelated"] {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
