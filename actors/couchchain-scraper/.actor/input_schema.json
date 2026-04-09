@@ -2,29 +2,35 @@
   "title": "Entrada scraper CouchChain",
   "type": "object",
   "schemaVersion": 1,
+  "additionalProperties": false,
   "properties": {
     "origin": {
       "title": "Origen",
       "type": "string",
-      "description": "Texto de lugar de salida (ciudad, país, etc.)",
-      "editor": "textfield"
+      "description": "Lugar de salida (ciudad, país). No uses otras claves en el JSON: solo origin, destination, etc.",
+      "editor": "textfield",
+      "prefill": "Rosario",
+      "default": "Rosario"
     },
     "destination": {
       "title": "Destino",
       "type": "string",
-      "description": "Texto de lugar de llegada",
-      "editor": "textfield"
+      "description": "Lugar de llegada",
+      "editor": "textfield",
+      "prefill": "San Carlos de Bariloche",
+      "default": "San Carlos de Bariloche"
     },
     "departureDate": {
       "title": "Fecha de salida",
       "type": "string",
-      "description": "Opcional — YYYY-MM-DD o texto",
-      "editor": "textfield"
+      "description": "Opcional — YYYY-MM-DD",
+      "editor": "textfield",
+      "prefill": "2026-06-15"
     },
     "sessionId": {
       "title": "ID de sesión",
       "type": "string",
-      "description": "Opcional — correlación con la app",
+      "description": "Opcional — correlación con la app CouchChain",
       "editor": "textfield"
     }
   },
