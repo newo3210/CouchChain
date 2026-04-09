@@ -1,6 +1,11 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { RoutePlan, RoutePlanResponse } from "@/lib/types/route";
+import type {
+  ParsedIntent,
+  RoutePlan,
+  RoutePlanErrorDebug,
+  RoutePlanResponse,
+} from "@/lib/types/route";
 
 // ─── Sprite map ────────────────────────────────────────────────────────────────
 // SVG incluidos en /public/gatito/ (sin 404 en deploy). Podés sustituir por GIF pixel-art con el mismo nombre base.
@@ -21,6 +26,18 @@ interface Props {
 
 const SLEEP_AFTER_MS = 60_000; // go sleeping after 60s idle
 
+const LS_ROUTE_DEBUG = "couchchain:routeDebug";
+
+function readRouteDebugFlag(): boolean {
+  if (typeof window === "undefined") return false;
+  if (process.env.NEXT_PUBLIC_ROUTE_DEBUG === "true") return true;
+  try {
+    return window.localStorage.getItem(LS_ROUTE_DEBUG) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export default function GatitoAssistant({ onRoutePlan, mapContainerRef }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [state, setState] = useState<GatitoState>("idle");
@@ -30,6 +47,17 @@ export default function GatitoAssistant({ onRoutePlan, mapContainerRef }: Props)
   const chatRef = useRef<HTMLDivElement>(null);
   const sleepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [spriteFailed, setSpriteFailed] = useState(false);
+  const [routeDebug, setRouteDebug] = useState(false);
+  const [lastErrorDetail, setLastErrorDetail] = useState<{
+    message: string;
+    status: number;
+    intent?: ParsedIntent;
+    debug?: RoutePlanErrorDebug;
+  } | null>(null);
+
+  useEffect(() => {
+    setRouteDebug(readRouteDebugFlag());
+  }, []);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -72,21 +100,44 @@ export default function GatitoAssistant({ onRoutePlan, mapContainerRef }: Props)
     setHistory((h) => [...h, { role: "user", text: query }]);
     setState("processing");
     setMessage("Sigo conectando datos…");
+    setLastErrorDetail(null);
     resetSleepTimer();
+
+    let apiFault: {
+      message: string;
+      status: number;
+      intent?: ParsedIntent;
+      debug?: RoutePlanErrorDebug;
+    } | null = null;
 
     try {
       const res = await fetch("/api/route-plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: query }),
+        body: JSON.stringify({
+          message: query,
+          ...(routeDebug ? { debug: true } : {}),
+        }),
       });
 
+      const payload = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? "Error en el servidor");
+        const errMsg =
+          typeof payload.error === "string"
+            ? payload.error
+            : "Error en el servidor";
+        apiFault = {
+          message: errMsg,
+          status: res.status,
+          intent: payload.intent as ParsedIntent | undefined,
+          debug: payload.debug as RoutePlanErrorDebug | undefined,
+        };
+        setLastErrorDetail(apiFault);
+        throw new Error(errMsg);
       }
 
-      const data: RoutePlanResponse = await res.json();
+      const data = payload as RoutePlanResponse;
       setState("success");
       setMessage(data.plan.aiSynthesis);
       setHistory((h) => [...h, { role: "gatito", text: data.plan.aiSynthesis }]);
@@ -99,8 +150,24 @@ export default function GatitoAssistant({ onRoutePlan, mapContainerRef }: Props)
         err instanceof Error ? err.message : "Algo falló. Intentá de nuevo.";
       setState("error");
       setMessage(msg);
-      setHistory((h) => [...h, { role: "gatito", text: msg }]);
+      const note =
+        apiFault?.debug != null
+          ? ` (HTTP ${apiFault.status}; abrí «Último error del API» abajo).`
+          : apiFault
+            ? ` (HTTP ${apiFault.status}).`
+            : "";
+      setHistory((h) => [...h, { role: "gatito", text: msg + note }]);
       setTimeout(() => setState("idle"), 4000);
+    }
+  }
+
+  function toggleRouteDebug(checked: boolean) {
+    setRouteDebug(checked);
+    try {
+      if (checked) window.localStorage.setItem(LS_ROUTE_DEBUG, "1");
+      else window.localStorage.removeItem(LS_ROUTE_DEBUG);
+    } catch {
+      /* ignore */
     }
   }
 
@@ -140,26 +207,59 @@ export default function GatitoAssistant({ onRoutePlan, mapContainerRef }: Props)
 
       {/* Input — only when expanded */}
       {isVisible && (
-        <form
-          onSubmit={handleSubmit}
-          className="mb-2 flex w-72 gap-2"
-        >
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="¿A dónde querés ir?"
-            className="flex-1 px-3 py-2 rounded-lg border border-[#E8E8E8] bg-white text-sm text-[#1a1a1a] placeholder-[#8a8a8a] focus:outline-none focus:ring-2 focus:ring-[#8B7355]/30"
-            disabled={state === "processing"}
-            autoFocus
-          />
-          <button
-            type="submit"
-            disabled={state === "processing" || !input.trim()}
-            className="px-3 py-2 rounded-lg bg-[#8B7355] text-white text-sm font-medium hover:bg-[#7a6549] disabled:opacity-50 transition-colors"
+        <>
+          <form
+            onSubmit={handleSubmit}
+            className="mb-2 flex w-80 max-w-[calc(100vw-2rem)] gap-2"
           >
-            →
-          </button>
-        </form>
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="¿A dónde querés ir?"
+              className="flex-1 px-3 py-2 rounded-lg border border-[#E8E8E8] bg-white text-sm text-[#1a1a1a] placeholder-[#8a8a8a] focus:outline-none focus:ring-2 focus:ring-[#8B7355]/30"
+              disabled={state === "processing"}
+              autoFocus
+            />
+            <button
+              type="submit"
+              disabled={state === "processing" || !input.trim()}
+              className="px-3 py-2 rounded-lg bg-[#8B7355] text-white text-sm font-medium hover:bg-[#7a6549] disabled:opacity-50 transition-colors"
+            >
+              →
+            </button>
+          </form>
+          <label className="mb-2 flex w-80 max-w-[calc(100vw-2rem)] cursor-pointer items-center gap-2 text-xs text-[#5c5c5c]">
+            <input
+              type="checkbox"
+              className="rounded border-[#ccc]"
+              checked={routeDebug}
+              onChange={(e) => toggleRouteDebug(e.target.checked)}
+            />
+            Depuración API (payload extra + vista previa Groq en errores)
+          </label>
+          {lastErrorDetail && (
+            <details
+              className="mb-2 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-amber-200/80 bg-amber-50/90 p-2 text-xs text-[#3d3200]"
+              open={routeDebug}
+            >
+              <summary className="cursor-pointer font-medium text-[#5c4a00]">
+                Último error del API
+              </summary>
+              <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-snug text-[#1a1400]">
+                {JSON.stringify(
+                  {
+                    httpStatus: lastErrorDetail.status,
+                    message: lastErrorDetail.message,
+                    intent: lastErrorDetail.intent,
+                    debug: lastErrorDetail.debug,
+                  },
+                  null,
+                  2,
+                )}
+              </pre>
+            </details>
+          )}
+        </>
       )}
 
       {/* State message */}

@@ -81,6 +81,11 @@ export interface ParsedIntent {
   dep_iata?: string;
   arr_iata?: string;
   rawQuery: string;
+  /**
+   * true si el JSON del modelo no validó y no hubo patrón heurístico (de/hacia X…).
+   * El API no debe intentar geocodificar cadenas vacías o placeholders inútiles.
+   */
+  parseFailed?: boolean;
 }
 
 export interface RoutePlan {
@@ -139,6 +144,26 @@ export interface TrustStamp {
 export interface RoutePlanResponse {
   plan: RoutePlan;
   scrapeJobId?: string; // present if N3 was enqueued
+}
+
+/** Incluido en respuestas 4xx/5xx de POST /api/route-plan cuando el cliente pide debug o siempre (metadatos no sensibles). */
+export interface RoutePlanErrorDebug {
+  stage: "parse" | "geocode";
+  /** true si Zod validó el JSON del modelo (puede haberse enriquecido con heurística si el modelo falló). */
+  zodOk: boolean;
+  /** Origen/destino ya normalizados que se intentaron geocodificar. */
+  originQuery?: string;
+  destQuery?: string;
+  originGeocoded?: boolean;
+  destGeocoded?: boolean;
+  originPhotonStatus?: number | string;
+  destPhotonStatus?: number | string;
+  originFeatureCount?: number;
+  destFeatureCount?: number;
+  /** Presente si el cliente envió debug: true */
+  groqRawPreview?: string;
+  zodIssueSummaries?: string[];
+  heuristicUsed?: boolean;
 }
 
 /** Filas devueltas por el job N3 (BullMQ o Apify), no segmentos de ruta OSRM. */

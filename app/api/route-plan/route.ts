@@ -1,20 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { parseIntent, synthesizeRoute } from "@/lib/groq";
-import { geocode } from "@/lib/photon";
+import { parseIntentWithMeta, synthesizeRoute } from "@/lib/groq";
+import { geocodeDiagnostics } from "@/lib/photon";
 import { getRoute } from "@/lib/osrm";
 import { getScheduledFlights } from "@/lib/aviationstack";
 import type { FlightAlternative } from "@/lib/types/route";
 import { getWeather } from "@/lib/open-meteo";
 import { getTransitFeeds } from "@/lib/transitland";
 import { enqueueScraperJob } from "@/lib/scrape-queue";
-import { RoutePlan, RoutePlanResponse, Waypoint } from "@/lib/types/route";
+import {
+  RoutePlan,
+  RoutePlanErrorDebug,
+  RoutePlanResponse,
+  Waypoint,
+} from "@/lib/types/route";
 import { randomUUID } from "crypto";
 
 const BodySchema = z.object({
   message: z.string().min(1).max(1000),
   sessionId: z.string().optional(),
+  /** Si es true, la respuesta de error incluye detalles extra (p. ej. Vista previa Groq). */
+  debug: z.boolean().optional(),
 });
+
+function attachGroqPreview(
+  debug: RoutePlanErrorDebug,
+  meta: { groqRawPreview: string } | undefined,
+  clientWantsDebug: boolean,
+) {
+  const blocked = process.env.ROUTE_PLAN_HIDE_GROQ_PREVIEW === "true";
+  if (!blocked && clientWantsDebug && meta) {
+    debug.groqRawPreview = meta.groqRawPreview;
+  }
+}
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
@@ -23,28 +41,76 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  const { message, sessionId = randomUUID() } = parsed.data;
+  const {
+    message,
+    sessionId = randomUUID(),
+    debug: clientDebug = false,
+  } = parsed.data;
 
   // ── N0: Parse intent ────────────────────────────────────────────────────────
-  const intent = await parseIntent(message);
+  const { intent, meta: parseMeta } = await parseIntentWithMeta(message);
+
+  if (
+    intent.parseFailed ||
+    !intent.origin.trim() ||
+    !intent.destination.trim()
+  ) {
+    const debug: RoutePlanErrorDebug = {
+      stage: "parse",
+      zodOk: parseMeta.zodOk,
+      heuristicUsed: parseMeta.heuristicUsed,
+      zodIssueSummaries: parseMeta.zodIssueSummaries,
+    };
+    attachGroqPreview(debug, parseMeta, clientDebug);
+    return NextResponse.json(
+      {
+        error:
+          "No entendí bien de dónde salís y a dónde vas. Probá algo como: «de Palermo a Mendoza» o «desde Córdoba a Rosario».",
+        intent,
+        debug,
+      },
+      { status: 422 },
+    );
+  }
+
+  const photonLimit = process.env.PHOTON_LIMIT
+    ? Number(process.env.PHOTON_LIMIT)
+    : undefined;
+  const photonLang = process.env.PHOTON_LANG;
 
   // ── N0: Geocode (Photon / GeoJSON). Destino con sesgo cerca del origen si existe.
-  const originCoord = await geocode(intent.origin);
-  const destCoord = await geocode(intent.destination, {
-    bias: originCoord
-      ? { lat: originCoord.lat, lng: originCoord.lng }
+  const originDiag = await geocodeDiagnostics(intent.origin);
+  const destDiag = await geocodeDiagnostics(intent.destination, {
+    bias: originDiag.coord
+      ? { lat: originDiag.coord.lat, lng: originDiag.coord.lng }
       : undefined,
-    lang: process.env.PHOTON_LANG,
-    limit: process.env.PHOTON_LIMIT
-      ? Number(process.env.PHOTON_LIMIT)
-      : undefined,
+    lang: photonLang,
+    limit: photonLimit,
   });
 
+  const originCoord = originDiag.coord;
+  const destCoord = destDiag.coord;
+
   if (!originCoord || !destCoord) {
+    const debug: RoutePlanErrorDebug = {
+      stage: "geocode",
+      zodOk: parseMeta.zodOk,
+      originQuery: intent.origin,
+      destQuery: intent.destination,
+      originGeocoded: !!originCoord,
+      destGeocoded: !!destCoord,
+      originPhotonStatus: originDiag.httpStatus,
+      destPhotonStatus: destDiag.httpStatus,
+      originFeatureCount: originDiag.featureCount,
+      destFeatureCount: destDiag.featureCount,
+      heuristicUsed: parseMeta.heuristicUsed,
+    };
+    attachGroqPreview(debug, parseMeta, clientDebug);
     return NextResponse.json(
       {
         error: "No pude geolocalizar origen o destino. ¿Podés ser más específico?",
         intent,
+        debug,
       },
       { status: 422 },
     );

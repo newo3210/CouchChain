@@ -116,6 +116,37 @@ function firstFeatureToNamedCoord(
   return { name, lat, lng };
 }
 
+export type GeocodeDiagnostics = {
+  coord: NamedCoord | null;
+  httpStatus: number | "network";
+  featureCount: number;
+};
+
+/**
+ * Geocodifica usando Photon y expone estado HTTP y cantidad de features (para depuración en UI/API).
+ */
+export async function geocodeDiagnostics(
+  query: string,
+  options: GeocodeOptions = {},
+): Promise<GeocodeDiagnostics> {
+  const url = buildPhotonSearchUrl(query, { ...options, limit: options.limit ?? 1 });
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    if (!res.ok) {
+      return { coord: null, httpStatus: res.status, featureCount: 0 };
+    }
+    const data = (await res.json()) as PhotonGeoJsonResponse;
+    const coord = firstFeatureToNamedCoord(data, query);
+    return {
+      coord,
+      httpStatus: res.status,
+      featureCount: data.features?.length ?? 0,
+    };
+  } catch {
+    return { coord: null, httpStatus: "network", featureCount: 0 };
+  }
+}
+
 /**
  * Geocodifica usando Photon. Respuesta esperada: GeoJSON FeatureCollection.
  */
@@ -123,15 +154,8 @@ export async function geocode(
   query: string,
   options: GeocodeOptions = {},
 ): Promise<NamedCoord | null> {
-  const url = buildPhotonSearchUrl(query, { ...options, limit: options.limit ?? 1 });
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
-    if (!res.ok) return null;
-    const data = (await res.json()) as PhotonGeoJsonResponse;
-    return firstFeatureToNamedCoord(data, query);
-  } catch {
-    return null;
-  }
+  const d = await geocodeDiagnostics(query, options);
+  return d.coord;
 }
 
 /**

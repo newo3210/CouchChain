@@ -17,6 +17,72 @@ function nullishOptional<S extends z.ZodTypeAny>(schema: S) {
   return z.preprocess((val) => (val === null ? undefined : val), schema);
 }
 
+const BUDGET_ALIASES: Record<string, "low" | "medium" | "high"> = {
+  low: "low",
+  medium: "medium",
+  high: "high",
+  bajo: "low",
+  economico: "low",
+  economica: "low",
+  barato: "low",
+  barata: "low",
+  "low budget": "low",
+  medio: "medium",
+  moderado: "medium",
+  moderada: "medium",
+  alto: "high",
+  caro: "high",
+  cara: "high",
+  lujo: "high",
+};
+
+/** Normaliza respuestas del modelo antes de Zod (tipos sueltos, presupuesto en texto, etc.). */
+function coerceIntentPayload(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const o = { ...(raw as Record<string, unknown>) };
+
+  const asTrimmedString = (v: unknown): string => {
+    if (typeof v === "string") return v.trim();
+    if (v == null) return "";
+    return String(v).trim();
+  };
+
+  o.origin = asTrimmedString(o.origin);
+  o.destination = asTrimmedString(o.destination);
+
+  const b = o.budget;
+  if (b === "" || b === undefined) o.budget = null;
+  else if (b === null) o.budget = null;
+  else if (typeof b === "number" && b >= 1 && b <= 3 && Number.isInteger(b)) {
+    o.budget = b === 1 ? "low" : b === 2 ? "medium" : "high";
+  } else if (typeof b === "string") {
+    const k = b
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "");
+    o.budget = BUDGET_ALIASES[k] ?? null;
+  } else {
+    o.budget = null;
+  }
+
+  if (typeof o.interests === "string") {
+    const t = o.interests.trim();
+    o.interests = t ? [t] : [];
+  } else if (!Array.isArray(o.interests)) {
+    o.interests = [];
+  } else {
+    o.interests = (o.interests as unknown[])
+      .map((x) => (typeof x === "string" ? x.trim() : x != null ? String(x).trim() : ""))
+      .filter(Boolean);
+  }
+
+  if (o.currency == null || o.currency === "") o.currency = "ARS";
+  else o.currency = String(o.currency).trim() || "ARS";
+
+  return o;
+}
+
 const IntentSchema = z.object({
   origin: z.string().min(1),
   destination: z.string().min(1),
@@ -70,13 +136,130 @@ Ejemplos de formato aceptable en un mismo campo:
 - Solo país: "Portugal", "Italia".
 - Ciudad ambigua: deja lo que dijo el usuario; no sustituyas por otra ciudad.
 Si el usuario nombra varios lugares claros de partida y llegada, origin = salida, destination = llegada.
+Si hay dos topónimos claros y verbos como "ir", "viajar", "ruta" pero sin "de/a", asigná el lugar de partida a origin y el de llegada a destination en el orden del mensaje.
 
 Opcionales (omite la clave, o usa null):
 - departureDate: fecha o expresión ("en julio", "próximo finde").
 - durationDays: número de días si hay duración.
-- dep_iata / arr_iata: si menciona aeropuertos (3 letras IATA, ej. ROS, EZE, BRC, MAD), extraelos; permiten cotizar vuelos reales en segundo plano.`;
+- dep_iata / arr_iata: solo si menciona código IATA de aeropuerto (3 letras).`;
 
-export async function parseIntent(userMessage: string): Promise<ParsedIntent> {
+/** Si el modelo devuelve JSON inválido, intentar extraer origen/destino del texto. */
+function heuristicExtractPlaces(msg: string): { origin: string; destination: string } | null {
+  const t = msg.replace(/\s+/g, " ").trim();
+  if (t.length < 5) return null;
+
+  const strip = (s: string) => s.trim().replace(/[.,;]+$/, "");
+
+  // "ir / viajar / voy a DESTINO desde ORIGEN"
+  const irADesde = /\b(?:quiero\s+)?(?:ir|viajar|viajo|voy)\s+(?:a|hacia)\s+(.+)\s+\b(?:desde|de)\s+(.+)$/i.exec(
+    t,
+  );
+  if (irADesde) {
+    const destination = strip(irADesde[1]);
+    const origin = strip(irADesde[2]);
+    if (
+      origin.length >= 2 &&
+      destination.length >= 2 &&
+      origin.toLowerCase() !== destination.toLowerCase()
+    ) {
+      return { origin, destination };
+    }
+  }
+
+  // "desde ORIGEN hasta DESTINO"
+  const salgoLlego =
+    /\bsalgo\s+de\s+(.+?)\s+y\s+llego\s+(?:a|en)\s+(.+)$/i.exec(t);
+  if (salgoLlego) {
+    const origin = strip(salgoLlego[1]);
+    const destination = strip(salgoLlego[2]);
+    if (
+      origin.length >= 2 &&
+      destination.length >= 2 &&
+      origin.toLowerCase() !== destination.toLowerCase()
+    ) {
+      return { origin, destination };
+    }
+  }
+
+  const hasta = /\bdesde\s+(.+)\s+hasta\s+(.+)$/i.exec(t);
+  if (hasta) {
+    const origin = strip(hasta[1]);
+    const destination = strip(hasta[2]);
+    if (
+      origin.length >= 2 &&
+      destination.length >= 2 &&
+      origin.toLowerCase() !== destination.toLowerCase()
+    ) {
+      return { origin, destination };
+    }
+  }
+
+  // "ruta|viaje de|entre X a|y|hasta Y"
+  const ruta = /\b(?:ruta|viaje)\s+(?:de|entre)\s+(.+)\s+(?:a|hasta|y)\s+(.+)$/i.exec(
+    t,
+  );
+  if (ruta) {
+    const origin = strip(ruta[1]);
+    const destination = strip(ruta[2]);
+    if (
+      origin.length >= 2 &&
+      destination.length >= 2 &&
+      origin.toLowerCase() !== destination.toLowerCase()
+    ) {
+      return { origin, destination };
+    }
+  }
+
+  // "entre X y Y" → orden habitual primero origen
+  const entre = /\bentre\s+(.+)\s+y\s+(.+)$/i.exec(t);
+  if (entre) {
+    const origin = strip(entre[1]);
+    const destination = strip(entre[2]);
+    if (
+      origin.length >= 2 &&
+      destination.length >= 2 &&
+      origin.toLowerCase() !== destination.toLowerCase()
+    ) {
+      return { origin, destination };
+    }
+  }
+
+  const es = /\b(?:desde|de)\s+(.+)\s+\b(?:a|hacia|para)\s+(.+)$/i.exec(t);
+  if (es) {
+    const origin = strip(es[1]);
+    const destination = strip(es[2]);
+    if (
+      origin.length >= 2 &&
+      destination.length >= 2 &&
+      origin.toLowerCase() !== destination.toLowerCase()
+    ) {
+      return { origin, destination };
+    }
+  }
+
+  const en = /\bfrom\s+(.+)\s+to\s+(.+)$/i.exec(t);
+  if (en) {
+    const origin = strip(en[1]);
+    const destination = strip(en[2]);
+    if (origin.length >= 2 && destination.length >= 2) {
+      return { origin, destination };
+    }
+  }
+
+  return null;
+}
+
+export type IntentParseMeta = {
+  groqRawPreview: string;
+  jsonOk: boolean;
+  zodOk: boolean;
+  heuristicUsed: boolean;
+  zodIssueSummaries?: string[];
+};
+
+export async function parseIntentWithMeta(
+  userMessage: string,
+): Promise<{ intent: ParsedIntent; meta: IntentParseMeta }> {
   const completion = await getGroq().chat.completions.create({
     model: MODEL,
     messages: [
@@ -88,31 +271,97 @@ export async function parseIntent(userMessage: string): Promise<ParsedIntent> {
   });
 
   const raw = completion.choices[0]?.message?.content ?? "{}";
+  const groqRawPreview = raw.length > 500 ? `${raw.slice(0, 500)}…` : raw;
+
   let parsed: unknown;
+  let jsonOk = false;
   try {
-    // Strip possible markdown code fences
     const clean = raw.replace(/```(?:json)?/g, "").replace(/```/g, "").trim();
-    parsed = JSON.parse(clean);
+    const tryParse = (s: string) => {
+      try {
+        return JSON.parse(s);
+      } catch {
+        return null;
+      }
+    };
+    parsed = tryParse(clean);
+    if (parsed == null && /[{\[]/.test(clean)) {
+      const startObj = clean.indexOf("{");
+      const endObj = clean.lastIndexOf("}");
+      if (startObj !== -1 && endObj > startObj) {
+        parsed = tryParse(clean.slice(startObj, endObj + 1));
+      }
+    }
+    if (parsed == null) parsed = {};
+    else jsonOk = true;
   } catch {
     parsed = {};
   }
 
+  parsed = coerceIntentPayload(parsed);
   const result = IntentSchema.safeParse(parsed);
+  const zodIssueSummaries = result.success
+    ? undefined
+    : result.error.issues.slice(0, 6).map((i) => `${i.path.join(".")}: ${i.message}`);
+
   if (!result.success) {
-    // Fallback: try to extract at minimum origin/destination
+    const fromText = heuristicExtractPlaces(userMessage);
+    if (fromText) {
+      return {
+        intent: {
+          ...fromText,
+          budget: null,
+          currency: "ARS",
+          interests: [],
+          dep_iata: undefined,
+          arr_iata: undefined,
+          rawQuery: userMessage,
+        },
+        meta: {
+          groqRawPreview,
+          jsonOk,
+          zodOk: false,
+          heuristicUsed: true,
+          zodIssueSummaries,
+        },
+      };
+    }
     return {
-      origin: "origen desconocido",
-      destination: "destino desconocido",
-      budget: null,
-      currency: "ARS",
-      interests: [],
-      dep_iata: undefined,
-      arr_iata: undefined,
-      rawQuery: userMessage,
+      intent: {
+        origin: "",
+        destination: "",
+        budget: null,
+        currency: "ARS",
+        interests: [],
+        dep_iata: undefined,
+        arr_iata: undefined,
+        rawQuery: userMessage,
+        parseFailed: true,
+      },
+      meta: {
+        groqRawPreview,
+        jsonOk,
+        zodOk: false,
+        heuristicUsed: false,
+        zodIssueSummaries,
+      },
     };
   }
 
-  return { ...result.data, rawQuery: userMessage };
+  return {
+    intent: { ...result.data, rawQuery: userMessage },
+    meta: {
+      groqRawPreview,
+      jsonOk,
+      zodOk: true,
+      heuristicUsed: false,
+    },
+  };
+}
+
+export async function parseIntent(userMessage: string): Promise<ParsedIntent> {
+  const { intent } = await parseIntentWithMeta(userMessage);
+  return intent;
 }
 
 // ─── Synthesis ────────────────────────────────────────────────────────────────
