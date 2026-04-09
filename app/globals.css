@@ -1,11 +1,8 @@
 @import "tailwindcss";
 
-:root {
-  --font-inter: "Inter", system-ui, sans-serif;
-}
-
+/* --font-inter la define next/font en <html className={inter.variable}> */
 body {
-  font-family: var(--font-inter);
+  font-family: var(--font-inter), system-ui, sans-serif;
 }
 
 /* Leaflet z-index fix inside Next.js */

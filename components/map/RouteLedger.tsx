@@ -45,12 +45,36 @@ function PriceBadge({ seg }: { seg: TransportSegment }) {
   );
 }
 
+function DiscardBtn({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-[#9a6b6b] hover:bg-[#f5e8e8] border border-transparent hover:border-[#e0cccc]"
+      aria-label={label}
+      title={label}
+    >
+      Quitar
+    </button>
+  );
+}
+
 interface Props {
   plan: RoutePlan | null;
   scrapePending?: boolean;
   freshnessLabel?: string;
   /** Al elegir una cotización del scraper se actualiza el segmento principal con ese precio. */
   onSelectScrapedFlight?: (quote: ScrapedFlightQuote) => void;
+  onDismissTransitOperator?: (operatorName: string) => void;
+  onDismissScrapedFlight?: (index: number) => void;
+  onDismissAviationFlight?: (index: number) => void;
+  onDismissSegment?: (index: number) => void;
 }
 
 export default function RouteLedger({
@@ -58,12 +82,20 @@ export default function RouteLedger({
   scrapePending,
   freshnessLabel,
   onSelectScrapedFlight,
+  onDismissTransitOperator,
+  onDismissScrapedFlight,
+  onDismissAviationFlight,
+  onDismissSegment,
 }: Props) {
   const flightQuotes = plan?.scrapedFlightQuotes ?? [];
   const [flightPick, setFlightPick] = useState(0);
 
   useEffect(() => {
-    setFlightPick(0);
+    setFlightPick((p) =>
+      flightQuotes.length === 0
+        ? 0
+        : Math.min(p, flightQuotes.length - 1),
+    );
   }, [plan?.id, flightQuotes.length]);
   if (!plan) {
     return (
@@ -120,6 +152,12 @@ export default function RouteLedger({
               </div>
             )}
           </div>
+          {onDismissSegment && plan.transportSegments.length > 1 && (
+            <DiscardBtn
+              label="Descartar tramo del itinerario"
+              onClick={() => onDismissSegment(i)}
+            />
+          )}
         </div>
       ))}
 
@@ -162,6 +200,12 @@ export default function RouteLedger({
                     </a>
                   )}
                 </span>
+                {onDismissTransitOperator && (
+                  <DiscardBtn
+                    label={`Quitar ${f.operatorName}`}
+                    onClick={() => onDismissTransitOperator(f.operatorName)}
+                  />
+                )}
               </li>
             ))}
           </ul>
@@ -174,34 +218,42 @@ export default function RouteLedger({
             Opciones de vuelo (precio)
           </span>
           <p className="text-[#5c5c5c] leading-snug">
-            Elegí una fila para fijar precio y operador en el primer tramo del itinerario.
+            Elegí una opción para fijar precio en el primer tramo. «Quitar» descarta esa cotización.
           </p>
           <ul className="space-y-1" role="list">
             {flightQuotes.map((q, i) => (
               <li key={`${q.provider}-${i}-${q.price}`}>
-                <label className="flex cursor-pointer items-start gap-2 rounded-md border border-[#dce6d4] bg-white px-2 py-1.5 has-[:checked]:border-[#8B7355] has-[:checked]:bg-[#faf8f4]">
-                  <input
-                    type="radio"
-                    name="scraped-flight-quote"
-                    className="mt-1"
-                    checked={flightPick === i}
-                    onChange={() => {
-                      setFlightPick(i);
-                      onSelectScrapedFlight?.(q);
-                    }}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="font-medium text-[#1a1a1a]">
-                      {q.provider}
+                <div className="flex items-start gap-1 rounded-md border border-[#dce6d4] bg-white px-2 py-1.5 has-[input:checked]:border-[#8B7355]">
+                  <label className="flex flex-1 min-w-0 cursor-pointer items-start gap-2 rounded has-[input:checked]:bg-[#faf8f4]">
+                    <input
+                      type="radio"
+                      name="scraped-flight-quote"
+                      className="mt-1 shrink-0"
+                      checked={flightPick === i}
+                      onChange={() => {
+                        setFlightPick(i);
+                        onSelectScrapedFlight?.(q);
+                      }}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="font-medium text-[#1a1a1a]">
+                        {q.provider}
+                      </span>
+                      <span className="ml-2 font-mono text-[#6B8E6B]">
+                        {q.currency} {q.price.toLocaleString("es-AR")}
+                      </span>
+                      {q.departure && (
+                        <span className="block text-[#8a8a8a]">{q.departure}</span>
+                      )}
                     </span>
-                    <span className="ml-2 font-mono text-[#6B8E6B]">
-                      {q.currency} {q.price.toLocaleString("es-AR")}
-                    </span>
-                    {q.departure && (
-                      <span className="block text-[#8a8a8a]">{q.departure}</span>
-                    )}
-                  </span>
-                </label>
+                  </label>
+                  {onDismissScrapedFlight && (
+                    <DiscardBtn
+                      label="Quitar esta cotización"
+                      onClick={() => onDismissScrapedFlight(i)}
+                    />
+                  )}
+                </div>
               </li>
             ))}
           </ul>
@@ -213,16 +265,24 @@ export default function RouteLedger({
           <span className="font-medium text-[#1a1a1a]">
             Vuelos (Aviationstack)
           </span>
-          <ul className="space-y-1 text-[#5c5c5c] font-mono leading-relaxed">
-            {plan.flightAlternatives.slice(0, 6).map((f, i) => (
-              <li key={i}>
-                {f.airline ?? "—"}{" "}
-                {f.flightNumber && `· ${f.flightNumber}`}
-                {f.scheduledDeparture && (
-                  <span className="text-[#8a8a8a]">
-                    {" "}
-                    · {f.scheduledDeparture}
-                  </span>
+          <ul className="space-y-1 text-[#5c5c5c] font-mono leading-relaxed max-h-48 overflow-y-auto pr-1">
+            {plan.flightAlternatives.map((f, i) => (
+              <li key={i} className="flex items-start justify-between gap-2">
+                <span className="min-w-0">
+                  {f.airline ?? "—"}{" "}
+                  {f.flightNumber && `· ${f.flightNumber}`}
+                  {f.scheduledDeparture && (
+                    <span className="text-[#8a8a8a]">
+                      {" "}
+                      · {f.scheduledDeparture}
+                    </span>
+                  )}
+                </span>
+                {onDismissAviationFlight && (
+                  <DiscardBtn
+                    label="Quitar este vuelo de la lista"
+                    onClick={() => onDismissAviationFlight(i)}
+                  />
                 )}
               </li>
             ))}
