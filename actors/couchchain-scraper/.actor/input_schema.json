@@ -6,22 +6,26 @@
     "origin": {
       "title": "Origen",
       "type": "string",
-      "description": "Texto de lugar de salida (ciudad, país, etc.)"
+      "description": "Texto de lugar de salida (ciudad, país, etc.)",
+      "editor": "textfield"
     },
     "destination": {
       "title": "Destino",
       "type": "string",
-      "description": "Texto de lugar de llegada"
+      "description": "Texto de lugar de llegada",
+      "editor": "textfield"
     },
     "departureDate": {
       "title": "Fecha de salida",
       "type": "string",
-      "description": "Opcional — ISO o texto que use tu worker"
+      "description": "Opcional — YYYY-MM-DD o texto",
+      "editor": "textfield"
     },
     "sessionId": {
       "title": "ID de sesión",
       "type": "string",
-      "description": "Opcional — correlación con la app (mismo campo que enqueueScraperJob)"
+      "description": "Opcional — correlación con la app",
+      "editor": "textfield"
     }
   },
   "required": ["origin", "destination"]
