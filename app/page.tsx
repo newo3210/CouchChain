@@ -2,7 +2,12 @@
 import dynamic from "next/dynamic";
 import { useRef, useState, useCallback, useEffect } from "react";
 import { useAccount } from "wagmi";
-import { RoutePlan } from "@/lib/types/route";
+import type {
+  RoutePlan,
+  TransportSegment,
+  Waypoint,
+} from "@/lib/types/route";
+import type { RouteMapHandle } from "@/components/map/RouteMap";
 import Header from "@/components/ui/Header";
 import RouteLedger from "@/components/map/RouteLedger";
 import MintButton from "@/components/ui/MintButton";
@@ -17,7 +22,7 @@ import type { ScrapedFlightQuote } from "@/lib/types/route";
 const RouteMap = dynamic(() => import("@/components/map/RouteMap"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full min-h-[200px] bg-[#E8E8E8] rounded-lg animate-pulse flex items-center justify-center text-[#8a8a8a] text-sm">
+    <div className="absolute inset-0 z-0 flex items-center justify-center bg-[#e7e5e4] text-sm text-[#64748b] animate-pulse">
       Cargando mapa…
     </div>
   ),
@@ -28,15 +33,60 @@ const GatitoAssistant = dynamic(
   { ssr: false },
 );
 
+async function refreshPlanWaypoints(
+  base: RoutePlan,
+  wps: Waypoint[],
+): Promise<RoutePlan> {
+  if (wps.length < 2) {
+    return { ...base, waypoints: wps, transportSegments: [] };
+  }
+  try {
+    const res = await fetch("/api/waypoints-route", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        waypoints: wps.map((w) => ({ name: w.name, lat: w.lat, lng: w.lng })),
+      }),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { segments: TransportSegment[] };
+      return { ...base, waypoints: wps, transportSegments: data.segments };
+    }
+  } catch {
+    /* ignore */
+  }
+  return { ...base, waypoints: wps };
+}
+
 export default function Home() {
   const { address } = useAccount();
-  const mapRef = useRef<HTMLDivElement>(null);
+  const mapApiRef = useRef<RouteMapHandle | null>(null);
 
   const [plan, setPlan] = useState<RoutePlan | null>(null);
   const [scrapeJobId, setScrapeJobId] = useState<string | undefined>();
   const [scrapePending, setScrapePending] = useState(false);
   const [currentFreshnessLabel, setFreshnessLabel] = useState<string>("");
   const [mintSuccess, setMintSuccess] = useState<string | null>(null);
+  const [activeWaypointId, setActiveWaypointId] = useState<string | null>(null);
+
+  const planFitKey = plan
+    ? [
+        plan.id,
+        ...plan.waypoints.map(
+          (w) => `${w.id}:${w.lat.toFixed(5)},${w.lng.toFixed(5)}`,
+        ),
+      ].join("|")
+    : "";
+
+  useEffect(() => {
+    if (!plan?.waypoints.length) return;
+    const id = requestAnimationFrame(() => mapApiRef.current?.fitToPlan());
+    return () => cancelAnimationFrame(id);
+  }, [planFitKey, plan?.waypoints.length]);
+
+  useEffect(() => {
+    setActiveWaypointId(null);
+  }, [plan?.id]);
 
   useEffect(() => {
     if (!scrapeJobId) return;
@@ -90,7 +140,7 @@ export default function Home() {
     }, 4000);
 
     return () => clearInterval(interval);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrapeJobId]);
 
   const handleRoutePlan = useCallback((newPlan: RoutePlan, jobId?: string) => {
@@ -98,6 +148,70 @@ export default function Home() {
     setScrapeJobId(jobId);
     setMintSuccess(null);
     setFreshnessLabel("");
+  }, []);
+
+  const handleWaypointSelect = useCallback((id: string) => {
+    setActiveWaypointId(id);
+    mapApiRef.current?.focusWaypoint(id);
+  }, []);
+
+  const handleAddStop = useCallback(() => {
+    const q = window.prompt("Nombre o dirección de la nueva parada:");
+    if (!q?.trim()) return;
+
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/geocode?q=${encodeURIComponent(q.trim())}`,
+        );
+        if (!res.ok) {
+          window.alert("No encontramos ese lugar.");
+          return;
+        }
+        const geo = (await res.json()) as {
+          name: string;
+          lat: number;
+          lng: number;
+        };
+
+        setPlan((base) => {
+          if (!base) {
+            window.alert("Primero pedí una ruta con el asistente.");
+            return base;
+          }
+          const dest = base.waypoints.find((w) => w.type === "destination");
+          const withoutDest = base.waypoints.filter(
+            (w) => w.type !== "destination",
+          );
+          const newStop: Waypoint = {
+            id: crypto.randomUUID(),
+            type: "stop",
+            name: geo.name,
+            lat: geo.lat,
+            lng: geo.lng,
+          };
+          const wps = dest
+            ? [...withoutDest, newStop, dest]
+            : [...base.waypoints, newStop];
+
+          void refreshPlanWaypoints(base, wps).then(setPlan);
+          return { ...base, waypoints: wps };
+        });
+      } catch {
+        window.alert("Error al geocodificar.");
+      }
+    })();
+  }, []);
+
+  const handleRemoveWaypoint = useCallback((id: string) => {
+    setPlan((prev) => {
+      if (!prev) return prev;
+      const wp = prev.waypoints.find((w) => w.id === id);
+      if (!wp || wp.type !== "stop") return prev;
+      const wps = prev.waypoints.filter((w) => w.id !== id);
+      void refreshPlanWaypoints(prev, wps).then(setPlan);
+      return { ...prev, waypoints: wps };
+    });
   }, []);
 
   const handlePickScrapedFlight = useCallback((quote: ScrapedFlightQuote) => {
@@ -169,54 +283,50 @@ export default function Home() {
   }, []);
 
   const handleWaypointDrag = useCallback(
-    async (waypointId: string, lat: number, lng: number) => {
-      if (!plan) return;
-      const updated = {
-        ...plan,
-        waypoints: plan.waypoints.map((w) =>
-          w.id === waypointId ? { ...w, lat, lng } : w,
-        ),
-      };
-      setPlan(updated);
+    (waypointId: string, lat: number, lng: number) => {
+      setPlan((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          waypoints: prev.waypoints.map((w) =>
+            w.id === waypointId ? { ...w, lat, lng } : w,
+          ),
+        };
+      });
     },
-    [plan],
+    [],
   );
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-[#f5f5f4] text-[#0f172a]">
       <Header />
 
       <main className="flex-1 flex flex-col min-h-0 w-full max-w-lg mx-auto">
-        {/* Fila 1: Gatito + chat */}
-        <GatitoAssistant
-          onRoutePlan={handleRoutePlan}
-          mapContainerRef={mapRef as React.RefObject<HTMLElement>}
-          layout="embedded"
-        />
-
-        {/* Fila 2: mapa */}
-        <section className="w-full shrink-0 border-b border-[#E8E8E8] bg-[#eef0ed] px-2 py-2">
-          <div
-            className="relative w-full h-[min(42vh,380px)] min-h-[220px] max-h-[480px] rounded-xl overflow-hidden border border-[#ddd]"
-            ref={mapRef as React.RefObject<HTMLDivElement>}
-          >
-            {!plan && (
-              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center text-center pointer-events-none px-6">
-                <p className="text-[#8a8a8a] text-sm">
-                  La ruta aparecerá aquí cuando el asistente la calcule.
-                </p>
-              </div>
-            )}
+        <section
+          className="relative w-full shrink-0 h-[min(56vh,480px)] min-h-[300px] max-h-[560px] overflow-hidden rounded-b-3xl border-x border-b border-[#e7e5e4] bg-[#e7e5e4] shadow-[0_24px_60px_-24px_rgba(15,23,42,0.2)]"
+          aria-label="Mapa y asistente"
+        >
+          <div className="absolute inset-0 z-0">
             <RouteMap
+              ref={mapApiRef}
               plan={plan}
               onWaypointDrag={handleWaypointDrag}
               onMapInteract={() => {}}
             />
           </div>
+
+          {!plan && (
+            <div className="pointer-events-none absolute inset-0 z-[5] flex flex-col items-center justify-center px-6 text-center">
+              <p className="text-sm text-[#64748b]">
+                La ruta aparecerá en el mapa cuando el asistente la calcule.
+              </p>
+            </div>
+          )}
+
+          <GatitoAssistant variant="overlay" onRoutePlan={handleRoutePlan} />
         </section>
 
-        {/* Fila 3: itinerario (curable) */}
-        <section className="flex-1 min-h-[200px] overflow-y-auto bg-[#FAFAFA] border-t border-[#E8E8E8] pb-8">
+        <section className="flex-1 min-h-[200px] overflow-y-auto bg-[#f5f5f4] border-t border-[#e7e5e4] pb-8">
           <RouteLedger
             plan={plan}
             scrapePending={scrapePending}
@@ -226,6 +336,10 @@ export default function Home() {
             onDismissScrapedFlight={handleDismissScrapedFlight}
             onDismissAviationFlight={handleDismissAviationFlight}
             onDismissSegment={handleDismissSegment}
+            activeWaypointId={activeWaypointId}
+            onWaypointActivate={handleWaypointSelect}
+            onAddStop={handleAddStop}
+            onRemoveWaypoint={handleRemoveWaypoint}
           />
           {plan && address && (
             <div className="px-4 pb-6">
@@ -235,7 +349,7 @@ export default function Home() {
                 onMinted={(hash) => setMintSuccess(hash)}
               />
               {mintSuccess && (
-                <p className="mt-2 text-xs text-[#6B8E6B] text-center">
+                <p className="mt-2 text-xs text-[#0d9488] text-center">
                   ¡Ruta guardada en tu Pasaporte!
                 </p>
               )}
@@ -243,7 +357,7 @@ export default function Home() {
           )}
           {plan && !address && (
             <div className="px-4 pb-6">
-              <p className="text-xs text-[#8a8a8a] text-center">
+              <p className="text-xs text-[#64748b] text-center">
                 Conectá tu wallet para guardar la ruta en tu Pasaporte.
               </p>
             </div>

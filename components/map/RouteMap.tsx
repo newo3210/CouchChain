@@ -1,10 +1,15 @@
 "use client";
-import { useEffect, useRef, useCallback } from "react";
+import {
+  useEffect,
+  useRef,
+  useCallback,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
 import type { Control, Map as LeafletMap, Marker as LeafletMarker } from "leaflet";
 import { RoutePlan, Waypoint } from "@/lib/types/route";
 import "leaflet-routing-machine/dist/leaflet-routing-machine.css";
 
-/** Usa OSRM público vía leaflet-routing-machine (Blueprint). Desactivar: NEXT_PUBLIC_USE_LEAFLET_ROUTING_MACHINE=false */
 const useLeafletRoutingMachine =
   process.env.NEXT_PUBLIC_USE_LEAFLET_ROUTING_MACHINE !== "false";
 
@@ -12,18 +17,37 @@ const OSRM_SERVICE_URL =
   process.env.NEXT_PUBLIC_LEAFLET_ROUTING_SERVICE_URL ??
   "https://router.project-osrm.org/route/v1";
 
+/** Carto Positron (monocromático suave) o Voyager — no compite con la UI slate/off-white. */
+const MAP_TILE_PRESET = process.env.NEXT_PUBLIC_MAP_STYLE ?? "positron";
+const CARTO_TILES =
+  MAP_TILE_PRESET === "voyager"
+    ? "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+    : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+
+const ROUTE_LINE = "#334155";
+const MARKER = {
+  origin: "#1e293b",
+  destination: "#0f172a",
+  stop: "#64748b",
+} as const;
+
+export type RouteMapHandle = {
+  fitToPlan: () => void;
+  focusWaypoint: (id: string) => void;
+};
+
 interface RouteMapProps {
   plan: RoutePlan | null;
   onWaypointDrag?: (waypointId: string, lat: number, lng: number) => void;
   onMapInteract?: () => void;
 }
 
-export default function RouteMap({
-  plan,
-  onWaypointDrag,
-  onMapInteract,
-}: RouteMapProps) {
+const RouteMap = forwardRef<RouteMapHandle, RouteMapProps>(function RouteMap(
+  { plan, onWaypointDrag, onMapInteract },
+  ref,
+) {
   const mapRef = useRef<LeafletMap | null>(null);
+  const LRef = useRef<typeof import("leaflet") | null>(null);
   const markersRef = useRef<Map<string, LeafletMarker>>(new Map());
   const polylineRef = useRef<ReturnType<typeof import("leaflet")["polyline"]> | null>(null);
   const routingControlRef = useRef<
@@ -33,15 +57,48 @@ export default function RouteMap({
     }) | null
   >(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const planRef = useRef<RoutePlan | null>(null);
+  planRef.current = plan;
 
-  // Lazy-load Leaflet (SSR safe)
+  useImperativeHandle(ref, () => ({
+    fitToPlan() {
+      const map = mapRef.current;
+      const L = LRef.current;
+      const p = planRef.current;
+      if (!map || !L || !p?.waypoints.length) return;
+      const g = L.latLngBounds(
+        p.waypoints.map((w) => [w.lat, w.lng] as [number, number]),
+      );
+      if (g.isValid()) {
+        map.flyToBounds(g, {
+          padding: [52, 52],
+          maxZoom: 14,
+          duration: 0.85,
+        });
+      }
+    },
+    focusWaypoint(id: string) {
+      const map = mapRef.current;
+      const p = planRef.current;
+      if (!map || !p) return;
+      const w = p.waypoints.find((x) => x.id === id);
+      if (!w) return;
+      map.flyTo([w.lat, w.lng], Math.max(map.getZoom(), 13), {
+        duration: 0.85,
+        easeLinearity: 0.25,
+      });
+    },
+  }));
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (mapRef.current) return;
     if (!containerRef.current) return;
 
     (async () => {
-      const L = (await import("leaflet")).default;
+      const leafletMod = await import("leaflet");
+      const L = (leafletMod as { default: typeof import("leaflet") }).default;
+      LRef.current = L;
       await import("leaflet/dist/leaflet.css");
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -56,11 +113,14 @@ export default function RouteMap({
         center: [-40, -65],
         zoom: 5,
         zoomControl: true,
+        scrollWheelZoom: false,
       });
 
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "© OpenStreetMap contributors",
-        maxZoom: 19,
+      L.tileLayer(CARTO_TILES, {
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        subdomains: "abcd",
+        maxZoom: 20,
       }).addTo(map);
 
       map.on("mousedown", () => onMapInteract?.());
@@ -72,6 +132,7 @@ export default function RouteMap({
         mapRef.current.remove();
         mapRef.current = null;
       }
+      LRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -95,7 +156,8 @@ export default function RouteMap({
 
   const renderRoute = useCallback(async () => {
     if (!mapRef.current || !plan) return;
-    const L = (await import("leaflet")).default;
+    const L = LRef.current;
+    if (!L) return;
     const map = mapRef.current;
 
     markersRef.current.forEach((m) => m.remove());
@@ -119,11 +181,14 @@ export default function RouteMap({
           show: false,
           addWaypoints: false,
           routeWhileDragging: false,
-          fitSelectedRoutes: true,
+          fitSelectedRoutes: false,
           lineOptions: {
-            styles: [{ color: "#8B7355", weight: 4, opacity: 0.85 }],
+            styles: [{ color: ROUTE_LINE, weight: 4, opacity: 0.88 }],
           },
-        }).addTo(map) as Control & { setWaypoints?: (latlngs: unknown[]) => void; on?: (ev: string, fn: () => void) => void };
+        }).addTo(map) as Control & {
+          setWaypoints?: (latlngs: unknown[]) => void;
+          on?: (ev: string, fn: () => void) => void;
+        };
         routingControlRef.current = control;
       }
     } else {
@@ -133,17 +198,23 @@ export default function RouteMap({
         allCoords.push([seg.to.lat, seg.to.lng]);
       }
       if (allCoords.length >= 2) {
-        polylineRef.current = L.polyline(allCoords, {
-          color: "#8B7355",
+        const pl = L.polyline(allCoords, {
+          color: ROUTE_LINE,
           weight: 4,
-          opacity: 0.85,
+          opacity: 0.88,
         }).addTo(map);
-        map.fitBounds(polylineRef.current.getBounds(), { padding: [40, 40] });
+        polylineRef.current = pl;
+        map.flyToBounds(pl.getBounds(), { padding: [48, 48], duration: 0.75 });
       }
     }
 
     for (const wp of plan.waypoints) {
-      const iconColor = wp.type === "origin" ? "#6B8E6B" : "#B85C5C";
+      const iconColor =
+        wp.type === "origin"
+          ? MARKER.origin
+          : wp.type === "destination"
+            ? MARKER.destination
+            : MARKER.stop;
       const marker = L.marker([wp.lat, wp.lng], {
         draggable: true,
         title: wp.name,
@@ -161,11 +232,12 @@ export default function RouteMap({
       }).addTo(map);
 
       marker.bindPopup(`
-        <div style="font-family:Inter,sans-serif;min-width:140px">
-          <strong style="color:#1a1a1a">${wp.name}</strong>
-          ${wp.type === "origin" ? "<br/><span style='color:#6B8E6B;font-size:0.75rem'>Origen</span>" : ""}
-          ${wp.type === "destination" ? "<br/><span style='color:#B85C5C;font-size:0.75rem'>Destino</span>" : ""}
-          ${wp.notes ? `<br/><span style='color:#5c5c5c;font-size:0.8rem'>${wp.notes}</span>` : ""}
+        <div style="font-family:system-ui,sans-serif;min-width:140px">
+          <strong style="color:#0f172a">${wp.name}</strong>
+          ${wp.type === "origin" ? "<br/><span style='color:#334155;font-size:0.75rem'>Origen</span>" : ""}
+          ${wp.type === "destination" ? "<br/><span style='color:#1e293b;font-size:0.75rem'>Destino</span>" : ""}
+          ${wp.type === "stop" ? "<br/><span style='color:#475569;font-size:0.75rem'>Parada</span>" : ""}
+          ${wp.notes ? `<br/><span style='color:#64748b;font-size:0.8rem'>${wp.notes}</span>` : ""}
         </div>
       `);
 
@@ -192,28 +264,53 @@ export default function RouteMap({
       markersRef.current.set(wp.id, marker);
     }
 
-    if (routingControlRef.current && "on" in routingControlRef.current) {
-      const rcEvents = routingControlRef.current as {
-        on?: (ev: string, fn: () => void) => void;
-      };
-      rcEvents.on?.("routesfound", () => {
-        try {
+    const fitAll = () => {
+      try {
+        if (routingControlRef.current && "on" in routingControlRef.current) {
           const rc = routingControlRef.current as unknown as {
             getBounds?: () => import("leaflet").LatLngBounds;
           };
           const b = rc.getBounds?.();
-          if (b?.isValid()) map.fitBounds(b, { padding: [40, 40] });
-        } catch {
-          /* ignore */
+          if (b?.isValid()) {
+            map.flyToBounds(b, {
+              padding: [48, 48],
+              maxZoom: 14,
+              duration: 0.8,
+            });
+            return;
+          }
         }
-      });
-    } else if (polylineRef.current) {
-      map.fitBounds(polylineRef.current.getBounds(), { padding: [40, 40] });
-    } else if (plan.waypoints.length) {
-      const g = L.latLngBounds(
-        plan.waypoints.map((w) => [w.lat, w.lng] as [number, number]),
-      );
-      map.fitBounds(g, { padding: [40, 40] });
+        if (polylineRef.current) {
+          map.flyToBounds(polylineRef.current.getBounds(), {
+            padding: [48, 48],
+            duration: 0.75,
+          });
+          return;
+        }
+        if (plan.waypoints.length) {
+          const g = L.latLngBounds(
+            plan.waypoints.map((w) => [w.lat, w.lng] as [number, number]),
+          );
+          if (g.isValid()) {
+            map.flyToBounds(g, {
+              padding: [52, 52],
+              maxZoom: 14,
+              duration: 0.8,
+            });
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+
+    if (routingControlRef.current && "on" in routingControlRef.current) {
+      const rcEvents = routingControlRef.current as {
+        on?: (ev: string, fn: () => void) => void;
+      };
+      rcEvents.on?.("routesfound", fitAll);
+    } else {
+      fitAll();
     }
   }, [plan, onWaypointDrag, clearRouting]);
 
@@ -224,8 +321,9 @@ export default function RouteMap({
   return (
     <div
       ref={containerRef}
-      className="w-full h-full rounded-xl overflow-hidden"
-      style={{ minHeight: "400px" }}
+      className="absolute inset-0 h-full w-full min-h-[260px] overflow-hidden rounded-b-3xl"
     />
   );
-}
+});
+
+export default RouteMap;

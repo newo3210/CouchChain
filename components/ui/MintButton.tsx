@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { burstPremiumConfetti } from "@/lib/confetti-burst";
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import RoutePassportABI from "@/lib/abis/RoutePassport.json";
 import { RoutePlan, RouteIpfsPayload } from "@/lib/types/route";
@@ -22,6 +23,17 @@ export default function MintButton({ plan, creatorAddress, onMinted }: Props) {
   const [ipfsCid, setIpfsCid] = useState<string>("");
 
   const { writeContractAsync } = useWriteContract();
+  const celebratedRef = useRef(false);
+
+  useEffect(() => {
+    if (state === "uploading") {
+      celebratedRef.current = false;
+    }
+    if (state === "done" && !celebratedRef.current) {
+      celebratedRef.current = true;
+      burstPremiumConfetti();
+    }
+  }, [state]);
 
   async function handleMint() {
     if (!isConnected) {
@@ -130,11 +142,11 @@ export default function MintButton({ plan, creatorAddress, onMinted }: Props) {
       </button>
 
       {state === "error" && errorMsg && (
-        <p className="text-xs text-[#B85C5C] text-center">{errorMsg}</p>
+        <p className="text-xs text-[#991b1b] text-center">{errorMsg}</p>
       )}
 
       {state === "done" && ipfsCid && (
-        <p className="text-xs text-[#6B8E6B] text-center font-mono truncate">
+        <p className="text-xs text-[#0d9488] text-center font-mono truncate">
           IPFS: {ipfsCid.slice(0, 20)}…
         </p>
       )}

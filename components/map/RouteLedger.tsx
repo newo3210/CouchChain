@@ -1,67 +1,213 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Bus,
+  ChevronDown,
+  Crosshair,
+  MapPin,
+  Plus,
+  Plane,
+  Trash2,
+  Sparkles,
+} from "lucide-react";
 import {
   RoutePlan,
   ScrapedFlightQuote,
   TransportSegment,
+  Waypoint,
 } from "@/lib/types/route";
 
 const MODE_LABELS: Record<string, string> = {
-  car: "Auto / Bus",
+  car: "Auto / ruta",
   bus: "Bus",
   plane: "Vuelo",
   walk: "A pie",
   bike: "Bici",
-  ferry: "Barco",
+  ferry: "Ferry",
 };
 
-function ViabilityDot({ minutes }: { minutes: number }) {
-  if (minutes <= 240) return <span title="Viable" className="w-2.5 h-2.5 rounded-full bg-[#6B8E6B] inline-block" />;
-  if (minutes <= 600) return <span title="Tramo largo" className="w-2.5 h-2.5 rounded-full bg-[#C4A35A] inline-block" />;
-  return <span title="Tramo muy largo" className="w-2.5 h-2.5 rounded-full bg-[#B85C5C] inline-block" />;
-}
-
-function PriceBadge({ seg }: { seg: TransportSegment }) {
+function PriceLine({ seg }: { seg: TransportSegment }) {
   if (!seg.price) return null;
-  const { amount, currency, freshness, verifiedAt } = seg.price;
-  const label =
-    freshness === "pending"
-      ? "verificando…"
-      : verifiedAt
-      ? `${currency} ${amount.toLocaleString("es-AR")}`
-      : `${currency} ${amount.toLocaleString("es-AR")}`;
-
+  const { amount, currency, freshness } = seg.price;
   const color =
-    freshness === "live"
-      ? "text-[#6B8E6B]"
-      : freshness === "pending"
-      ? "text-[#C4A35A]"
-      : "text-[#8a8a8a]";
-
+    freshness === "live" ? "text-[#0d9488]" : "text-[#64748b]";
   return (
-    <span className={`font-mono text-xs ${color}`} title={verifiedAt ?? ""}>
-      {label}
+    <span className={`font-mono text-xs ${color}`}>
+      {currency} {amount.toLocaleString("es-AR")}
     </span>
   );
 }
 
-function DiscardBtn({
-  label,
-  onClick,
+const bubbleSpring = { type: "spring" as const, stiffness: 400, damping: 28 };
+
+const dockContainerVariants = {
+  hidden: {},
+  show: {
+    transition: {
+      staggerChildren: 0.085,
+      delayChildren: 0.06,
+    },
+  },
+};
+
+const dockItemVariants = {
+  hidden: { opacity: 0, x: -36, scale: 0.94 },
+  show: {
+    opacity: 1,
+    x: 0,
+    scale: 1,
+    transition: { type: "spring" as const, stiffness: 420, damping: 26 },
+  },
+};
+
+function DockWaypointBubble({
+  wp,
+  i,
+  waypointCount,
+  expandedWpId,
+  onToggleExpand,
+  activeWaypointId,
+  onWaypointActivate,
+  onRemoveWaypoint,
 }: {
-  label: string;
-  onClick: () => void;
+  wp: Waypoint;
+  i: number;
+  waypointCount: number;
+  expandedWpId: string | null;
+  onToggleExpand: (id: string) => void;
+  activeWaypointId?: string | null;
+  onWaypointActivate?: (id: string) => void;
+  onRemoveWaypoint?: (id: string) => void;
 }) {
+  const open = expandedWpId === wp.id;
+  const isStop = wp.type === "stop";
+  const isActive = activeWaypointId === wp.id;
+  const longTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longFired = useRef(false);
+
+  const clearLong = () => {
+    if (longTimer.current) {
+      clearTimeout(longTimer.current);
+      longTimer.current = null;
+    }
+  };
+
+  const onPointerDown = () => {
+    longFired.current = false;
+    clearLong();
+    longTimer.current = setTimeout(() => {
+      longFired.current = true;
+      onToggleExpand(wp.id);
+    }, 480);
+  };
+
+  const onPointerUp = () => {
+    clearLong();
+    if (!longFired.current) {
+      onWaypointActivate?.(wp.id);
+    }
+  };
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-[#9a6b6b] hover:bg-[#f5e8e8] border border-transparent hover:border-[#e0cccc]"
-      aria-label={label}
-      title={label}
+    <motion.div
+      layout
+      variants={dockItemVariants}
+      className={`snap-start shrink-0 min-w-[208px] max-w-[248px] overflow-hidden rounded-2xl border-2 bg-[#fafaf9] shadow-[0_8px_30px_-12px_rgba(15,23,42,0.18)] transition-shadow ${
+        isActive
+          ? "border-[#0f172a] shadow-[0_10px_36px_-10px_rgba(15,23,42,0.35)]"
+          : "border-[#e7e5e4]"
+      }`}
     >
-      Quitar
-    </button>
+      <div
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-left touch-pan-y"
+        onPointerDown={onPointerDown}
+        onPointerUp={onPointerUp}
+        onPointerCancel={clearLong}
+        onPointerLeave={clearLong}
+      >
+        <span
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+            wp.type === "origin"
+              ? "bg-[#e2e8f0] text-[#1e293b]"
+              : wp.type === "destination"
+                ? "bg-[#cbd5e1] text-[#0f172a]"
+                : "bg-[#f1f5f9] text-[#475569]"
+          }`}
+        >
+          <MapPin className="h-4 w-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-[#0f172a] truncate">{wp.name}</p>
+          <p className="text-[10px] uppercase tracking-wide text-[#64748b]">
+            {wp.type === "origin"
+              ? "Origen"
+              : wp.type === "destination"
+                ? "Destino"
+                : "Parada"}
+            {waypointCount > 1 ? ` · ${i + 1}/${waypointCount}` : ""}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="shrink-0 rounded-full p-1.5 text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#0f172a] transition-colors"
+          aria-expanded={open}
+          aria-label={open ? "Cerrar opciones" : "Expandir opciones"}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleExpand(wp.id);
+          }}
+        >
+          <ChevronDown
+            className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`}
+          />
+        </button>
+      </div>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.24, ease: [0.25, 0.1, 0.25, 1] }}
+            className="border-t border-[#e7e5e4]"
+          >
+            <div className="space-y-2 px-3 py-3 text-xs text-[#475569]">
+              <p className="font-mono text-[11px] text-[#64748b]">
+                {wp.lat.toFixed(4)}, {wp.lng.toFixed(4)}
+              </p>
+              <p className="text-[10px] text-[#94a3b8]">
+                Mantené presionado la tarjeta o usá la flecha para curar la
+                parada.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {onWaypointActivate && (
+                  <button
+                    type="button"
+                    onClick={() => onWaypointActivate(wp.id)}
+                    className="inline-flex items-center gap-1 rounded-full border border-[#e7e5e4] bg-[#f8fafc] px-3 py-1.5 text-[11px] font-medium text-[#0f172a] hover:bg-[#f1f5f9]"
+                  >
+                    <Crosshair className="h-3.5 w-3.5" />
+                    Ver en mapa
+                  </button>
+                )}
+                {isStop && onRemoveWaypoint && (
+                  <button
+                    type="button"
+                    onClick={() => onRemoveWaypoint(wp.id)}
+                    className="inline-flex items-center gap-1 rounded-full border border-[#fecaca] bg-[#fef2f2] px-3 py-1.5 text-[11px] font-medium text-[#991b1b] hover:bg-[#fee2e2]"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Quitar parada
+                  </button>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }
 
@@ -69,12 +215,15 @@ interface Props {
   plan: RoutePlan | null;
   scrapePending?: boolean;
   freshnessLabel?: string;
-  /** Al elegir una cotización del scraper se actualiza el segmento principal con ese precio. */
   onSelectScrapedFlight?: (quote: ScrapedFlightQuote) => void;
   onDismissTransitOperator?: (operatorName: string) => void;
   onDismissScrapedFlight?: (index: number) => void;
   onDismissAviationFlight?: (index: number) => void;
   onDismissSegment?: (index: number) => void;
+  onWaypointActivate?: (id: string) => void;
+  activeWaypointId?: string | null;
+  onAddStop?: () => void;
+  onRemoveWaypoint?: (id: string) => void;
 }
 
 export default function RouteLedger({
@@ -86,105 +235,164 @@ export default function RouteLedger({
   onDismissScrapedFlight,
   onDismissAviationFlight,
   onDismissSegment,
+  onWaypointActivate,
+  activeWaypointId,
+  onAddStop,
+  onRemoveWaypoint,
 }: Props) {
   const flightQuotes = plan?.scrapedFlightQuotes ?? [];
   const [flightPick, setFlightPick] = useState(0);
+  const [expandedWp, setExpandedWp] = useState<string | null>(null);
 
   useEffect(() => {
     setFlightPick((p) =>
-      flightQuotes.length === 0
-        ? 0
-        : Math.min(p, flightQuotes.length - 1),
+      flightQuotes.length === 0 ? 0 : Math.min(p, flightQuotes.length - 1),
     );
   }, [plan?.id, flightQuotes.length]);
+
+  useEffect(() => {
+    setExpandedWp(null);
+  }, [plan?.id]);
+
   if (!plan) {
     return (
-      <div className="p-4 text-sm text-[#8a8a8a] italic">
-        El itinerario aparecerá aquí una vez que pidas una ruta al Gatito.
+      <div className="px-4 py-6 text-sm text-[#64748b] text-center">
+        Pedí una ruta arriba: las paradas aparecerán acá en el dock.
       </div>
     );
   }
 
+  const toggleWp = (id: string) =>
+    setExpandedWp((x) => (x === id ? null : id));
+
   return (
-    <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-[#1a1a1a]">Itinerario</h3>
-        {scrapePending && (
-          <span className="text-xs text-[#C4A35A] animate-pulse">
-            Buscando precios…
+    <div className="px-3 py-4 space-y-3 max-w-lg mx-auto w-full">
+      <div className="flex items-center justify-between gap-2 px-1">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-[#475569]">
+          Dock · Paradas
+        </h2>
+        {scrapePending ? (
+          <span className="text-[10px] text-[#b45309] animate-pulse">
+            Precios…
           </span>
-        )}
-        {!scrapePending && freshnessLabel && (
-          <span className="text-xs text-[#6B8E6B]">{freshnessLabel}</span>
-        )}
+        ) : freshnessLabel ? (
+          <span className="text-[10px] text-[#0d9488]">{freshnessLabel}</span>
+        ) : null}
       </div>
 
+      <motion.div
+        key={plan.id}
+        className="flex gap-2.5 overflow-x-auto pb-2 pt-1 pl-0.5 pr-1 snap-x [scrollbar-width:thin]"
+        variants={dockContainerVariants}
+        initial="hidden"
+        animate="show"
+      >
+        {plan.waypoints.map((wp, i) => (
+          <DockWaypointBubble
+            key={wp.id}
+            wp={wp}
+            i={i}
+            waypointCount={plan.waypoints.length}
+            expandedWpId={expandedWp}
+            onToggleExpand={toggleWp}
+            activeWaypointId={activeWaypointId}
+            onWaypointActivate={onWaypointActivate}
+            onRemoveWaypoint={onRemoveWaypoint}
+          />
+        ))}
+        {onAddStop && (
+          <motion.button
+            type="button"
+            layout
+            variants={dockItemVariants}
+            onClick={onAddStop}
+            className="snap-start shrink-0 flex min-w-[168px] max-w-[200px] flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-[#cbd5e1] bg-[#f8fafc] px-4 py-4 text-sm font-medium text-[#334155] shadow-sm transition-colors hover:border-[#94a3b8] hover:bg-[#f1f5f9]"
+          >
+            <Plus className="h-5 w-5" />
+            Parada
+          </motion.button>
+        )}
+      </motion.div>
+
       {plan.transportSegments.map((seg, i) => (
-        <div
-          key={i}
-          className="flex items-start gap-3 p-3 rounded-lg bg-[#FFFFFF] border border-[#E8E8E8]"
+        <motion.div
+          layout
+          key={`seg-${i}`}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={bubbleSpring}
+          className="rounded-2xl border border-[#e7e5e4] bg-[#fafaf9] px-4 py-3 shadow-[0_4px_20px_-8px_rgba(15,23,42,0.12)]"
         >
-          <ViabilityDot minutes={seg.durationMinutes} />
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-[#1a1a1a] truncate">
-              {seg.from.name} → {seg.to.name}
-            </div>
-            <div className="flex flex-wrap gap-2 mt-1 text-xs text-[#5c5c5c]">
-              <span>{MODE_LABELS[seg.mode] ?? seg.mode}</span>
-              <span>·</span>
-              <span>{seg.durationMinutes} min</span>
-              {seg.distanceKm && (
-                <>
-                  <span>·</span>
-                  <span>{seg.distanceKm} km</span>
-                </>
-              )}
-              {seg.transitProvider && (
-                <>
-                  <span>·</span>
-                  <span>{seg.transitProvider}</span>
-                </>
-              )}
-            </div>
-            {seg.price && (
-              <div className="mt-1">
-                <PriceBadge seg={seg} />
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-start gap-2 min-w-0">
+              <Bus className="h-4 w-4 text-[#475569] shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-[#0f172a]">
+                  {MODE_LABELS[seg.mode] ?? seg.mode} · {seg.durationMinutes} min
+                  {seg.distanceKm != null ? ` · ${seg.distanceKm} km` : ""}
+                </p>
+                <p className="text-[11px] text-[#64748b] truncate mt-0.5">
+                  {seg.from.name} → {seg.to.name}
+                </p>
+                {seg.transitProvider && (
+                  <p className="text-[10px] text-[#94a3b8] mt-1">
+                    {seg.transitProvider}
+                  </p>
+                )}
+                {seg.price && (
+                  <div className="mt-1">
+                    <PriceLine seg={seg} />
+                  </div>
+                )}
               </div>
+            </div>
+            {onDismissSegment && plan.transportSegments.length > 1 && (
+              <button
+                type="button"
+                onClick={() => onDismissSegment(i)}
+                className="shrink-0 rounded-full p-1.5 text-[#991b1b] hover:bg-[#fef2f2]"
+                aria-label="Quitar tramo"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
             )}
           </div>
-          {onDismissSegment && plan.transportSegments.length > 1 && (
-            <DiscardBtn
-              label="Descartar tramo del itinerario"
-              onClick={() => onDismissSegment(i)}
-            />
-          )}
-        </div>
+          <p className="text-[10px] text-[#94a3b8] mt-2 flex items-center gap-1">
+            <Sparkles className="h-3 w-3" />
+            Ruta principal (OSRM). Ajustá paradas en el dock para recalcular.
+          </p>
+        </motion.div>
       ))}
 
       {plan.weather && (
-        <div className="p-3 rounded-lg bg-[#f5f0e8] border border-[#e0d5c0] text-xs text-[#5c5c5c]">
+        <motion.div
+          layout
+          className="rounded-2xl border border-[#e7e5e4] bg-[#f8fafc] px-4 py-3 text-xs text-[#475569]"
+        >
           <span className="font-medium">Clima:</span>{" "}
-          {plan.weather.temperatureC}°C, {plan.weather.condition} · {" "}
-          Viento {plan.weather.windKmh} km/h
-        </div>
+          {plan.weather.temperatureC}°C · {plan.weather.condition} · viento{" "}
+          {plan.weather.windKmh} km/h
+        </motion.div>
       )}
 
       {plan.transitFeeds.length > 0 && (
-        <div className="space-y-1.5">
-          <span className="text-xs font-medium text-[#1a1a1a]">
-            Operadores de transporte ({plan.transitFeeds.length})
-          </span>
-          <ul className="max-h-40 overflow-y-auto space-y-1 pr-1">
+        <div className="space-y-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-[#64748b] px-1">
+            Operadores ({plan.transitFeeds.length})
+          </p>
+          <div className="flex gap-2 overflow-x-auto pb-1 snap-x">
             {plan.transitFeeds.map((f, i) => (
-              <li
+              <motion.div
                 key={`${f.operatorName}-${i}`}
-                className="flex items-start gap-2 rounded-md border border-[#E8E8E8] bg-[#FAFAFA] px-2 py-1.5 text-xs text-[#5c5c5c]"
+                layout
+                initial={{ opacity: 0, x: 12 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="snap-start shrink-0 max-w-[200px] rounded-xl border border-[#e7e5e4] bg-[#fafaf9] px-3 py-2 shadow-sm"
               >
-                <span className="mt-0.5 text-[#8B7355]" aria-hidden>
-                  ◆
-                </span>
-                <span className="min-w-0 flex-1 leading-snug">
-                  <span className="text-[#1a1a1a]">{f.operatorName}</span>
+                <p className="text-[11px] font-medium text-[#0f172a] truncate">
+                  {f.operatorName}
+                </p>
+                <div className="mt-1 flex gap-2">
                   {f.feedUrl && (
                     <a
                       href={
@@ -194,108 +402,123 @@ export default function RouteLedger({
                       }
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="ml-2 text-[#6B7FA8] hover:underline"
+                      className="text-[10px] text-[#475569] underline-offset-2 hover:underline"
                     >
                       web
                     </a>
                   )}
-                </span>
-                {onDismissTransitOperator && (
-                  <DiscardBtn
-                    label={`Quitar ${f.operatorName}`}
-                    onClick={() => onDismissTransitOperator(f.operatorName)}
-                  />
-                )}
-              </li>
+                  {onDismissTransitOperator && (
+                    <button
+                      type="button"
+                      onClick={() => onDismissTransitOperator(f.operatorName)}
+                      className="text-[10px] text-[#991b1b]"
+                    >
+                      quitar
+                    </button>
+                  )}
+                </div>
+              </motion.div>
             ))}
-          </ul>
+          </div>
         </div>
       )}
 
       {flightQuotes.length > 0 && (
-        <div className="p-3 rounded-lg bg-[#f0f4ec] border border-[#c5d4b8] text-xs space-y-2">
-          <span className="font-medium text-[#1a1a1a]">
-            Opciones de vuelo (precio)
-          </span>
-          <p className="text-[#5c5c5c] leading-snug">
-            Elegí una opción para fijar precio en el primer tramo. «Quitar» descarta esa cotización.
+        <div className="space-y-2 pt-1">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-[#0f766e] px-1 flex items-center gap-1">
+            <Plane className="h-3 w-3" />
+            Vuelos cotizados
           </p>
-          <ul className="space-y-1" role="list">
+          <div className="space-y-2">
             {flightQuotes.map((q, i) => (
-              <li key={`${q.provider}-${i}-${q.price}`}>
-                <div className="flex items-start gap-1 rounded-md border border-[#dce6d4] bg-white px-2 py-1.5 has-[input:checked]:border-[#8B7355]">
-                  <label className="flex flex-1 min-w-0 cursor-pointer items-start gap-2 rounded has-[input:checked]:bg-[#faf8f4]">
+              <motion.div
+                key={`${q.provider}-${i}-${q.price}`}
+                layout
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-2xl border border-[#e7e5e4] bg-[#f8fafc] px-3 py-2.5"
+              >
+                <div className="flex items-start gap-2">
+                  <label className="flex flex-1 cursor-pointer gap-2 min-w-0">
                     <input
                       type="radio"
                       name="scraped-flight-quote"
-                      className="mt-1 shrink-0"
+                      className="mt-1"
                       checked={flightPick === i}
                       onChange={() => {
                         setFlightPick(i);
                         onSelectScrapedFlight?.(q);
                       }}
                     />
-                    <span className="min-w-0 flex-1">
-                      <span className="font-medium text-[#1a1a1a]">
+                    <span className="min-w-0 text-xs">
+                      <span className="font-medium text-[#0f172a] block truncate">
                         {q.provider}
                       </span>
-                      <span className="ml-2 font-mono text-[#6B8E6B]">
+                      <span className="font-mono text-[#0d9488]">
                         {q.currency} {q.price.toLocaleString("es-AR")}
                       </span>
                       {q.departure && (
-                        <span className="block text-[#8a8a8a]">{q.departure}</span>
+                        <span className="block text-[10px] text-[#8a8a8a]">
+                          {q.departure}
+                        </span>
                       )}
                     </span>
                   </label>
                   {onDismissScrapedFlight && (
-                    <DiscardBtn
-                      label="Quitar esta cotización"
+                    <button
+                      type="button"
                       onClick={() => onDismissScrapedFlight(i)}
-                    />
+                      className="shrink-0 p-1 text-[#991b1b]"
+                      aria-label="Quitar"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   )}
                 </div>
-              </li>
+              </motion.div>
             ))}
-          </ul>
+          </div>
         </div>
       )}
 
       {plan.flightAlternatives && plan.flightAlternatives.length > 0 && (
-        <div className="p-3 rounded-lg bg-[#eef2f7] border border-[#d0d9e6] text-xs space-y-1.5">
-          <span className="font-medium text-[#1a1a1a]">
-            Vuelos (Aviationstack)
-          </span>
-          <ul className="space-y-1 text-[#5c5c5c] font-mono leading-relaxed max-h-48 overflow-y-auto pr-1">
-            {plan.flightAlternatives.map((f, i) => (
-              <li key={i} className="flex items-start justify-between gap-2">
-                <span className="min-w-0">
-                  {f.airline ?? "—"}{" "}
-                  {f.flightNumber && `· ${f.flightNumber}`}
-                  {f.scheduledDeparture && (
-                    <span className="text-[#8a8a8a]">
-                      {" "}
-                      · {f.scheduledDeparture}
-                    </span>
-                  )}
-                </span>
-                {onDismissAviationFlight && (
-                  <DiscardBtn
-                    label="Quitar este vuelo de la lista"
-                    onClick={() => onDismissAviationFlight(i)}
-                  />
+        <div className="space-y-2">
+          <p className="text-[10px] font-semibold uppercase text-[#64748b] px-1">
+            Itinerarios aéreos (referencia)
+          </p>
+          {plan.flightAlternatives.map((f, i) => (
+            <motion.div
+              key={i}
+              layout
+              className="flex items-start justify-between gap-2 rounded-xl border border-[#e7e5e4] bg-[#fafaf9] px-3 py-2 text-[11px] font-mono text-[#475569]"
+            >
+              <span className="min-w-0">
+                {f.airline ?? "—"}{" "}
+                {f.flightNumber && `· ${f.flightNumber}`}
+                {f.scheduledDeparture && (
+                  <span className="text-[#94a3b8]"> · {f.scheduledDeparture}</span>
                 )}
-              </li>
-            ))}
-          </ul>
+              </span>
+              {onDismissAviationFlight && (
+                <button
+                  type="button"
+                  onClick={() => onDismissAviationFlight(i)}
+                  className="shrink-0 text-[#991b1b] p-0.5"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </motion.div>
+          ))}
         </div>
       )}
 
-      <div className="text-xs text-[#8a8a8a] pt-2 border-t border-[#E8E8E8]">
-        Presupuesto estimado: {plan.estimatedBudget.currency}{" "}
+      <p className="text-[10px] text-[#94a3b8] px-1 pt-2 text-center">
+        Presupuesto: {plan.estimatedBudget.currency}{" "}
         {plan.estimatedBudget.amount > 0
           ? plan.estimatedBudget.amount.toLocaleString("es-AR")
-          : "calculando…"}
-      </div>
+          : "—"}
+      </p>
     </div>
   );
 }

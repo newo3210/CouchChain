@@ -1,14 +1,9 @@
 "use client";
-import { useState, useRef, useEffect, useCallback } from "react";
-import type {
-  ParsedIntent,
-  RoutePlan,
-  RoutePlanErrorDebug,
-  RoutePlanResponse,
-} from "@/lib/types/route";
+import { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { ArrowRight, Sparkles } from "lucide-react";
+import type { RoutePlan, RoutePlanResponse } from "@/lib/types/route";
 
-// ─── Sprite map ────────────────────────────────────────────────────────────────
-// SVG incluidos en /public/gatito/ (sin 404 en deploy). Podés sustituir por GIF pixel-art con el mismo nombre base.
 export type GatitoState = "idle" | "processing" | "success" | "error" | "sleeping";
 
 const SPRITES: Record<GatitoState, string> = {
@@ -19,86 +14,62 @@ const SPRITES: Record<GatitoState, string> = {
   sleeping: "/gatito/sleeping.svg",
 };
 
+const SLEEP_AFTER_MS = 60_000;
+const TYPING_SETTLE_MS = 620;
+
 interface Props {
   onRoutePlan?: (plan: RoutePlan, scrapeJobId?: string) => void;
-  /** Referencia al mapa: en modo flotante, al pasar el mouse se pliega el chat. */
+  variant?: "overlay" | "floating";
   mapContainerRef?: React.RefObject<HTMLElement | null>;
-  /** embedded = primera fila del layout móvil (ancho completo). floating = esquina inferior. */
-  layout?: "embedded" | "floating";
-}
-
-const SLEEP_AFTER_MS = 60_000; // go sleeping after 60s idle
-
-const LS_ROUTE_DEBUG = "couchchain:routeDebug";
-
-function readRouteDebugFlag(): boolean {
-  if (typeof window === "undefined") return false;
-  if (process.env.NEXT_PUBLIC_ROUTE_DEBUG === "true") return true;
-  try {
-    return window.localStorage.getItem(LS_ROUTE_DEBUG) === "1";
-  } catch {
-    return false;
-  }
 }
 
 export default function GatitoAssistant({
   onRoutePlan,
+  variant = "overlay",
   mapContainerRef,
-  layout = "floating",
 }: Props) {
-  const embedded = layout === "embedded";
-  const [expanded, setExpanded] = useState(embedded);
+  const floating = variant === "floating";
+  const [expanded, setExpanded] = useState(false);
   const [state, setState] = useState<GatitoState>("idle");
-  const [message, setMessage] = useState("");
+  const [caption, setCaption] = useState<string | null>(null);
   const [input, setInput] = useState("");
-  const [history, setHistory] = useState<{ role: "user" | "gatito"; text: string }[]>([]);
-  const chatRef = useRef<HTMLDivElement>(null);
-  const sleepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [spriteFailed, setSpriteFailed] = useState(false);
-  const [routeDebug, setRouteDebug] = useState(false);
-  const [lastErrorDetail, setLastErrorDetail] = useState<{
-    message: string;
-    status: number;
-    intent?: ParsedIntent;
-    debug?: RoutePlanErrorDebug;
-  } | null>(null);
+  const [settledTyping, setSettledTyping] = useState(false);
 
   useEffect(() => {
-    setRouteDebug(readRouteDebugFlag());
-  }, []);
-
-  // Auto-scroll chat
-  useEffect(() => {
-    chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth" });
-  }, [history]);
-
-  // Retract to ears when mouse enters map canvas (solo modo flotante)
-  useEffect(() => {
-    if (embedded) return;
-    const el = mapContainerRef?.current;
-    if (!el) return;
-    const handler = () => setExpanded(false);
-    el.addEventListener("mouseenter", handler);
-    return () => el.removeEventListener("mouseenter", handler);
-  }, [mapContainerRef, embedded]);
-
-  // Sleep timer
-  const resetSleepTimer = useCallback(() => {
-    setState((s) => (s === "sleeping" ? "idle" : s));
-    if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
-    sleepTimerRef.current = setTimeout(() => setState("sleeping"), SLEEP_AFTER_MS);
+    const t = setTimeout(() => setState("sleeping"), SLEEP_AFTER_MS);
+    return () => clearTimeout(t);
   }, []);
 
   useEffect(() => {
-    resetSleepTimer();
-    return () => {
-      if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
-    };
-  }, [resetSleepTimer]);
+    if (!input.trim()) {
+      setSettledTyping(false);
+      return;
+    }
+    setSettledTyping(false);
+    const t = setTimeout(() => setSettledTyping(true), TYPING_SETTLE_MS);
+    return () => clearTimeout(t);
+  }, [input]);
+
+  useEffect(() => {
+    if (floating && mapContainerRef?.current) {
+      const el = mapContainerRef.current;
+      const handler = () => setExpanded(false);
+      el.addEventListener("mouseenter", handler);
+      return () => el.removeEventListener("mouseenter", handler);
+    }
+  }, [floating, mapContainerRef]);
 
   useEffect(() => {
     setSpriteFailed(false);
   }, [state]);
+
+  const showPeek =
+    !floating &&
+    (state === "processing" ||
+      state === "success" ||
+      state === "error" ||
+      (input.trim().length > 0 && settledTyping));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -106,27 +77,15 @@ export default function GatitoAssistant({
     if (!query) return;
 
     setInput("");
-    setHistory((h) => [...h, { role: "user", text: query }]);
+    setCaption(null);
+    setSettledTyping(false);
     setState("processing");
-    setMessage("Sigo conectando datos…");
-    setLastErrorDetail(null);
-    resetSleepTimer();
-
-    let apiFault: {
-      message: string;
-      status: number;
-      intent?: ParsedIntent;
-      debug?: RoutePlanErrorDebug;
-    } | null = null;
 
     try {
       const res = await fetch("/api/route-plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: query,
-          ...(routeDebug ? { debug: true } : {}),
-        }),
+        body: JSON.stringify({ message: query }),
       });
 
       const payload = await res.json().catch(() => ({}));
@@ -136,231 +95,183 @@ export default function GatitoAssistant({
           typeof payload.error === "string"
             ? payload.error
             : "Error en el servidor";
-        apiFault = {
-          message: errMsg,
-          status: res.status,
-          intent: payload.intent as ParsedIntent | undefined,
-          debug: payload.debug as RoutePlanErrorDebug | undefined,
-        };
-        setLastErrorDetail(apiFault);
         throw new Error(errMsg);
       }
 
       const data = payload as RoutePlanResponse;
       setState("success");
-      setMessage(data.plan.aiSynthesis);
-      setHistory((h) => [...h, { role: "gatito", text: data.plan.aiSynthesis }]);
+      setCaption(
+        data.plan.aiSynthesis.slice(0, 280) +
+          (data.plan.aiSynthesis.length > 280 ? "…" : ""),
+      );
       onRoutePlan?.(data.plan, data.scrapeJobId);
-
-      // Back to idle after 3s
-      setTimeout(() => setState("idle"), 3000);
+      setTimeout(() => setState("idle"), 2800);
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "Algo falló. Intentá de nuevo.";
       setState("error");
-      setMessage(msg);
-      const note =
-        apiFault?.debug != null
-          ? ` (HTTP ${apiFault.status}; abrí «Último error del API» abajo).`
-          : apiFault
-            ? ` (HTTP ${apiFault.status}).`
-            : "";
-      setHistory((h) => [...h, { role: "gatito", text: msg + note }]);
-      setTimeout(() => setState("idle"), 4000);
+      setCaption(msg);
+      setTimeout(() => setState("idle"), 4500);
     }
   }
 
-  function toggleRouteDebug(checked: boolean) {
-    setRouteDebug(checked);
-    try {
-      if (checked) window.localStorage.setItem(LS_ROUTE_DEBUG, "1");
-      else window.localStorage.removeItem(LS_ROUTE_DEBUG);
-    } catch {
-      /* ignore */
-    }
-  }
+  const isEarsOnly = floating && !expanded;
 
-  const isVisible = expanded || embedded;
-  const isEarsOnly = !embedded && !expanded;
+  const commandFormClasses =
+    "flex items-center gap-2 rounded-full border border-[#e7e5e4] bg-[#fafaf9] px-4 py-2.5 shadow-[0_12px_40px_-12px_rgba(15,23,42,0.28),0_2px_8px_-2px_rgba(15,23,42,0.12)]";
 
-  const chatBox = (
-    <div
-      ref={chatRef}
-      className={`overflow-y-auto rounded-xl border border-[#E8E8E8] bg-white p-3 space-y-2 text-sm ${
-        embedded ? "w-full max-h-36 min-h-[4.5rem]" : "mb-2 w-72 max-h-52 shadow-md"
-      }`}
-      style={
-        embedded
-          ? undefined
-          : { boxShadow: "rgba(0,0,0,0.08) 0 0 0 1px, rgba(0,0,0,0.06) 0 4px 8px" }
-      }
+  const floatingCommandBar = (
+    <motion.div
+      className="pointer-events-auto relative z-30 w-full max-w-md mx-auto px-4 pt-4"
+      initial={{ y: -100, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      transition={{ type: "spring", stiffness: 260, damping: 24, mass: 0.85 }}
     >
-      {history.length === 0 ? (
-        embedded ? (
-          <p className="text-xs text-[#8a8a8a] italic">
-            Escribí tu ruta (ej. «de Lisboa a Madrid»).
-          </p>
-        ) : null
-      ) : (
-        history.map((h, i) => (
-          <div
-            key={i}
-            className={`flex ${h.role === "user" ? "justify-end" : "justify-start"}`}
-          >
-            <span
-              className={`px-2.5 py-1.5 rounded-lg max-w-[90%] leading-relaxed ${
-                h.role === "user"
-                  ? "bg-[#8B7355] text-white"
-                  : "bg-[#FAFAFA] text-[#1a1a1a] border border-[#E8E8E8]"
-              }`}
-            >
-              {h.text}
-            </span>
-          </div>
-        ))
-      )}
-    </div>
-  );
-
-  const formBlock = (
-    <>
-      <form
-        onSubmit={handleSubmit}
-        className={`mb-2 flex gap-2 ${embedded ? "w-full" : "w-80 max-w-[calc(100vw-2rem)]"}`}
-      >
+      <form onSubmit={handleSubmit} className={`relative z-30 ${commandFormClasses}`}>
+        <Sparkles className="w-4 h-4 text-[#334155] shrink-0" aria-hidden />
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="¿A dónde querés ir?"
-          className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-[#E8E8E8] bg-white text-sm text-[#1a1a1a] placeholder-[#8a8a8a] focus:outline-none focus:ring-2 focus:ring-[#8B7355]/30"
+          placeholder="Pedí tu ruta en lenguaje natural…"
           disabled={state === "processing"}
-          autoFocus={!embedded}
+          className="flex-1 min-w-0 bg-transparent text-[15px] text-[#0f172a] placeholder:text-[#64748b] outline-none border-0 focus:ring-0"
         />
         <button
           type="submit"
           disabled={state === "processing" || !input.trim()}
-          className="shrink-0 px-3 py-2 rounded-lg bg-[#8B7355] text-white text-sm font-medium hover:bg-[#7a6549] disabled:opacity-50 transition-colors"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1e293b] text-[#fafaf9] shadow-md transition enabled:hover:bg-[#0f172a] disabled:opacity-40"
+          aria-label="Enviar"
         >
-          →
+          <ArrowRight className="w-5 h-5" />
         </button>
       </form>
-      <label
-        className={`mb-2 flex cursor-pointer items-center gap-2 text-xs text-[#5c5c5c] ${embedded ? "w-full" : "w-80 max-w-[calc(100vw-2rem)]"}`}
-      >
-        <input
-          type="checkbox"
-          className="rounded border-[#ccc]"
-          checked={routeDebug}
-          onChange={(e) => toggleRouteDebug(e.target.checked)}
-        />
-        Depuración API
-      </label>
-      {lastErrorDetail && (
-        <details
-          className={`mb-2 rounded-lg border border-amber-200/80 bg-amber-50/90 p-2 text-xs text-[#3d3200] ${embedded ? "w-full" : "w-80 max-w-[calc(100vw-2rem)]"}`}
-          open={routeDebug}
-        >
-          <summary className="cursor-pointer font-medium text-[#5c4a00]">
-            Último error del API
-          </summary>
-          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-snug text-[#1a1400]">
-            {JSON.stringify(
-              {
-                httpStatus: lastErrorDetail.status,
-                message: lastErrorDetail.message,
-                intent: lastErrorDetail.intent,
-                debug: lastErrorDetail.debug,
-              },
-              null,
-              2,
-            )}
-          </pre>
-        </details>
-      )}
-    </>
+      <AnimatePresence mode="wait">
+        {caption && (
+          <motion.p
+            key={caption.slice(0, 24)}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="mt-2 px-3 text-xs leading-relaxed text-[#475569] line-clamp-4"
+          >
+            {caption}
+          </motion.p>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 
   const sprite = (
-    <div
-      className={`relative cursor-pointer select-none shrink-0 ${
-        embedded ? "h-24 w-24" : "h-32 w-32"
-      }`}
+    <motion.div
+      className={`relative ${floating ? "h-32 w-32" : "h-[5.25rem] w-[5.25rem]"} shrink-0 cursor-pointer select-none`}
       style={{
-        transition: "transform 0.3s ease-out",
-        transform: isEarsOnly ? "translateY(calc(100% - 20px))" : "translateY(0)",
+        transform: isEarsOnly ? "translateY(calc(100% - 20px))" : undefined,
+      }}
+      initial={{ y: 18, opacity: 0 }}
+      animate={{
+        y: isEarsOnly ? 48 : 0,
+        opacity: 1,
+      }}
+      transition={{
+        y: { type: "spring", stiffness: 280, damping: 24 },
+        opacity: { duration: 0.35 },
       }}
       onClick={() => {
-        if (!embedded) setExpanded((e) => !e);
-        resetSleepTimer();
+        if (floating) setExpanded((e) => !e);
       }}
-      title={embedded ? "Gatito asistente" : isEarsOnly ? "¡Hablar con el Gatito!" : "Cerrar"}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={SPRITES[state]}
-        alt={`Gatito ${state}`}
-        width={embedded ? 96 : 128}
-        height={embedded ? 96 : 128}
-        className="absolute inset-0 z-10 h-full w-full object-contain"
+        alt=""
+        width={floating ? 128 : 84}
+        height={floating ? 128 : 84}
+        className="absolute inset-0 z-10 h-full w-full object-contain drop-shadow-lg"
         style={{
           imageRendering: "pixelated",
-          transition: "opacity 0.2s",
           visibility: spriteFailed ? "hidden" : "visible",
         }}
         onLoad={() => setSpriteFailed(false)}
         onError={() => setSpriteFailed(true)}
       />
       {spriteFailed && (
-        <div
-          className="absolute inset-0 z-0 flex items-center justify-center rounded-xl bg-[#e8dfd4] text-4xl"
-          aria-hidden="true"
-        >
-          {state === "processing" && "🐱"}
-          {state === "success" && "😺"}
-          {state === "error" && "🙀"}
-          {state === "sleeping" && "😴"}
-          {state === "idle" && "🐱"}
-        </div>
+        <span className="absolute inset-0 flex items-center justify-center text-3xl">
+          🐱
+        </span>
       )}
-    </div>
+    </motion.div>
   );
 
-  if (embedded) {
+  if (floating) {
     return (
-      <section
-        className="w-full border-b border-[#E8DFD6] bg-gradient-to-b from-[#FFF9F3] to-[#FAF6F0]"
-        style={{ willChange: "transform" }}
-      >
-        <div className="flex items-start gap-3 px-3 py-3 max-w-xl mx-auto w-full">
-          {sprite}
-          <div className="flex-1 min-w-0 flex flex-col gap-2">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-[#8B7355]">
-              Asistente
-            </p>
-            {chatBox}
-            {formBlock}
-            {message && state !== "idle" && (
-              <div className="text-xs text-[#5c5c5c]">{message}</div>
-            )}
+      <div className="fixed bottom-0 right-4 z-50 flex flex-col items-end pointer-events-none">
+        {expanded && (
+          <div className="mb-2 pointer-events-auto w-80 max-w-[calc(100vw-1.5rem)]">
+            {floatingCommandBar}
           </div>
-        </div>
-      </section>
+        )}
+        <div className="pointer-events-auto">{sprite}</div>
+      </div>
     );
   }
 
   return (
-    <div
-      className="fixed bottom-0 right-4 z-50 flex flex-col items-end"
-      style={{ willChange: "transform" }}
-    >
-      {isVisible && history.length > 0 && chatBox}
-      {isVisible && formBlock}
-      {isVisible && message && state !== "idle" && (
-        <div className="mb-1 text-xs text-[#5c5c5c] px-1 max-w-[18rem] text-right">
-          {message}
-        </div>
-      )}
-      {sprite}
+    <div className="absolute inset-x-0 top-0 z-40 pointer-events-none flex justify-center px-0">
+      <motion.div
+        className="pointer-events-auto relative w-full max-w-md px-4 pt-4"
+        initial={{ y: -120, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ type: "spring", stiffness: 260, damping: 24, mass: 0.85 }}
+      >
+        <AnimatePresence>
+          {showPeek && (
+            <motion.div
+              key="peek"
+              className="pointer-events-none absolute left-0 top-[52px] z-20 w-[5.25rem] sm:top-[54px]"
+              initial={{ y: 32, opacity: 0, scale: 0.88 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 22, opacity: 0, scale: 0.92 }}
+              transition={{ type: "spring", stiffness: 340, damping: 27 }}
+            >
+              {sprite}
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <form
+          onSubmit={handleSubmit}
+          className={`relative z-30 ${commandFormClasses}`}
+        >
+          <Sparkles className="w-4 h-4 text-[#334155] shrink-0" aria-hidden />
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Pedí tu ruta en lenguaje natural…"
+            disabled={state === "processing"}
+            className="flex-1 min-w-0 bg-transparent text-[15px] text-[#0f172a] placeholder:text-[#64748b] outline-none border-0 focus:ring-0"
+          />
+          <button
+            type="submit"
+            disabled={state === "processing" || !input.trim()}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1e293b] text-[#fafaf9] shadow-md transition enabled:hover:bg-[#0f172a] disabled:opacity-40"
+            aria-label="Enviar"
+          >
+            <ArrowRight className="w-5 h-5" />
+          </button>
+        </form>
+        <AnimatePresence mode="wait">
+          {caption && (
+            <motion.p
+              key={caption.slice(0, 24)}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="relative z-30 mt-2 px-3 text-xs leading-relaxed text-[#475569] line-clamp-4"
+            >
+              {caption}
+            </motion.p>
+          )}
+        </AnimatePresence>
+      </motion.div>
     </div>
   );
 }

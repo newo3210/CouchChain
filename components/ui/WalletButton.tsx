@@ -10,9 +10,9 @@ export default function WalletButton() {
     return (
       <button
         onClick={() => disconnect()}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[#8B7355]/30 bg-[#FAFAFA] hover:bg-[#f0ebe3] text-sm text-[#1a1a1a] transition-colors"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#e7e5e4] bg-[#fafaf9] hover:bg-[#f1f5f9] text-sm text-[#0f172a] transition-colors"
       >
-        <span className="w-2 h-2 rounded-full bg-[#6B8E6B]" />
+        <span className="w-2 h-2 rounded-full bg-[#0d9488]" />
         {address.slice(0, 6)}…{address.slice(-4)}
       </button>
     );
@@ -24,7 +24,7 @@ export default function WalletButton() {
     <button
       onClick={() => injectedConnector && connect({ connector: injectedConnector })}
       disabled={isPending}
-      className="px-3 py-1.5 rounded-lg bg-[#8B7355] text-white text-sm font-medium hover:bg-[#7a6549] transition-colors disabled:opacity-50"
+      className="px-3 py-1.5 rounded-full bg-[#1e293b] text-[#fafaf9] text-sm font-medium hover:bg-[#0f172a] transition-colors disabled:opacity-50"
     >
       {isPending ? "Conectando…" : "Conectar wallet"}
     </button>

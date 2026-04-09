@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { burstPremiumConfetti } from "@/lib/confetti-burst";
 import { useAccount } from "wagmi";
 
 const TEMPLATES = {
@@ -28,6 +29,17 @@ export default function TrustBridge({
   const [note, setNote] = useState("");
   const [flowState, setFlowState] = useState<FlowState>("select");
   const [errorMsg, setErrorMsg] = useState("");
+  const trustConfettiRef = useRef(false);
+
+  useEffect(() => {
+    if (flowState === "sent" && !trustConfettiRef.current) {
+      trustConfettiRef.current = true;
+      burstPremiumConfetti();
+    }
+    if (flowState !== "sent") {
+      trustConfettiRef.current = false;
+    }
+  }, [flowState]);
 
   async function handleSend() {
     if (!template || !isConnected || !address) return;
