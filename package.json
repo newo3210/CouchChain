@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "postinstall": "prisma generate",
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
     "worker": "tsx workers/scrape-worker.ts",
@@ -25,6 +26,7 @@
     "next": "16.2.3",
     "pg": "^8.20.0",
     "pinata": "^2.4.4",
+    "prisma": "^7.7.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-leaflet": "^5.0.0",
@@ -46,7 +48,6 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.3",
     "hardhat": "^3.3.0",
-    "prisma": "^7.7.0",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5"
