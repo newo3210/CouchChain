@@ -3,13 +3,13 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { RoutePlan, RoutePlanResponse } from "@/lib/types/route";
 
 // ─── Sprite map ────────────────────────────────────────────────────────────────
-// Replace paths with actual GIF assets placed in /public/gatito/
+// SVG incluidos en /public/gatito/ (sin 404 en deploy). Podés sustituir por GIF pixel-art con el mismo nombre base.
 const SPRITES: Record<GatitoState, string> = {
-  idle:       "/gatito/idle.gif",
-  processing: "/gatito/processing.gif",
-  success:    "/gatito/success.gif",
-  error:      "/gatito/error.gif",
-  sleeping:   "/gatito/sleeping.gif",
+  idle: "/gatito/idle.svg",
+  processing: "/gatito/processing.svg",
+  success: "/gatito/success.svg",
+  error: "/gatito/error.svg",
+  sleeping: "/gatito/sleeping.svg",
 };
 
 export type GatitoState = "idle" | "processing" | "success" | "error" | "sleeping";
@@ -29,6 +29,7 @@ export default function GatitoAssistant({ onRoutePlan, mapContainerRef }: Props)
   const [history, setHistory] = useState<{ role: "user" | "gatito"; text: string }[]>([]);
   const chatRef = useRef<HTMLDivElement>(null);
   const sleepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [spriteFailed, setSpriteFailed] = useState(false);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -57,6 +58,10 @@ export default function GatitoAssistant({ onRoutePlan, mapContainerRef }: Props)
       if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
     };
   }, [resetSleepTimer]);
+
+  useEffect(() => {
+    setSpriteFailed(false);
+  }, [state]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -164,9 +169,9 @@ export default function GatitoAssistant({ onRoutePlan, mapContainerRef }: Props)
         </div>
       )}
 
-      {/* Gatito sprite container */}
+      {/* Gatito sprite container — tamaño fijo para no colapsar si la imagen falla */}
       <div
-        className="relative cursor-pointer select-none"
+        className="relative h-32 w-32 cursor-pointer select-none"
         style={{
           transition: "transform 0.3s ease-out",
           transform: isEarsOnly ? "translateY(calc(100% - 20px))" : "translateY(0)",
@@ -183,26 +188,27 @@ export default function GatitoAssistant({ onRoutePlan, mapContainerRef }: Props)
           alt={`Gatito ${state}`}
           width={128}
           height={128}
+          className="absolute inset-0 z-10 h-full w-full object-contain"
           style={{
             imageRendering: "pixelated",
             transition: "opacity 0.2s",
+            visibility: spriteFailed ? "hidden" : "visible",
           }}
-          onError={(e) => {
-            // Fallback when GIF assets not yet added
-            (e.target as HTMLImageElement).style.display = "none";
-          }}
+          onLoad={() => setSpriteFailed(false)}
+          onError={() => setSpriteFailed(true)}
         />
-        {/* Fallback visual when GIF assets missing */}
-        <div
-          className="absolute inset-0 flex items-center justify-center text-4xl"
-          aria-hidden="true"
-        >
-          {state === "processing" && "🐱"}
-          {state === "success" && "😺"}
-          {state === "error" && "🙀"}
-          {state === "sleeping" && "😴"}
-          {state === "idle" && "🐱"}
-        </div>
+        {spriteFailed && (
+          <div
+            className="absolute inset-0 z-0 flex items-center justify-center rounded-xl bg-[#e8dfd4] text-4xl"
+            aria-hidden="true"
+          >
+            {state === "processing" && "🐱"}
+            {state === "success" && "😺"}
+            {state === "error" && "🙀"}
+            {state === "sleeping" && "😴"}
+            {state === "idle" && "🐱"}
+          </div>
+        )}
       </div>
     </div>
   );

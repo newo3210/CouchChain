@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Gatito reposo">
+  <rect width="64" height="64" rx="12" fill="#e8dfd4"/>
+  <circle cx="22" cy="28" r="4" fill="#1a1a1a"/>
+  <circle cx="42" cy="28" r="4" fill="#1a1a1a"/>
+  <path d="M24 40 Q32 46 40 40" fill="none" stroke="#1a1a1a" stroke-width="2" stroke-linecap="round"/>
+  <path d="M18 12 L14 4 M32 8 L32 0 M46 12 L50 4" stroke="#8B7355" stroke-width="3" stroke-linecap="round"/>
+</svg>
