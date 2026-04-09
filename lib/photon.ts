@@ -40,6 +40,15 @@ function ensureHttps(url: string): string {
   return t;
 }
 
+/** Komoot público solo acepta estos valores; `es` u otros → 400 y falla toda la geocodificación. */
+const PHOTON_KOMOOT_LANGS = new Set(["default", "de", "en", "fr"]);
+
+export function normalizePhotonLang(lang: string | undefined): string {
+  const t = (lang ?? "").trim().toLowerCase();
+  if (PHOTON_KOMOOT_LANGS.has(t)) return t;
+  return "default";
+}
+
 /**
  * Construye la URL de búsqueda Photon:
  * - Si PHOTON_BASE_URL termina en `?q=` o contiene `q=` sin valor, se concatena el texto escapado.
@@ -57,8 +66,9 @@ export function buildPhotonSearchUrl(
   const limit =
     options.limit ??
     (process.env.PHOTON_LIMIT ? Number(process.env.PHOTON_LIMIT) : 5);
-  const lang =
-    options.lang ?? process.env.PHOTON_LANG ?? "es";
+  const lang = normalizePhotonLang(
+    options.lang ?? process.env.PHOTON_LANG ?? "default",
+  );
 
   const q = encodeURIComponent(query.trim());
   let url: string;

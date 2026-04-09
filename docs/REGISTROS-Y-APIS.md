@@ -49,7 +49,7 @@ Documento de referencia para **cuentas, productos habilitados y credenciales**, 
 | **Documentación** | [https://photon.komoot.io](https://photon.komoot.io) (API pública Komoot; existen instancias self-hosted). |
 | **Credencial** | Ninguna en el servicio público habitual. |
 | **Variables** | `PHOTON_BASE_URL` (p. ej. `https://photon.komoot.io/api/?q=` — el código añade el término codificado tras `q=`). Opcional: `PHOTON_LIMIT`, `PHOTON_LANG`. |
-| **Notas** | La API devuelve GeoJSON `FeatureCollection` con `Point` y `properties` (nombre, ciudad, país, etc.). Para sesgo geográfico el código puede añadir `&lat=` y `&lon=`; también `&limit=` y `&lang=` según parámetros. Respetar *fair use* del endpoint público; para alta escala, instancia propia. |
+| **Notas** | La API devuelve GeoJSON `FeatureCollection` con `Point` y `properties` (nombre, ciudad, país, etc.). **`PHOTON_LANG` en Komoot público solo admite `default`, `de`, `en`, `fr`**; otros valores (p. ej. `es`) devuelven **400** y rompen la geocodificación — el código normaliza el resto a `default`. Sesgo `&lat=` / `&lon=`, `&limit=`. Respetar *fair use*; instancia propia para escala. |
 
 ---
 
