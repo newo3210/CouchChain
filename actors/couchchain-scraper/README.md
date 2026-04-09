@@ -11,20 +11,22 @@ Apify **no** compila solo tu app Next.js: hace `docker build` en **una carpeta**
 
 Sin la carpeta, Apify intenta construir la raíz del monorepo (Next.js) y no es un Actor válido.
 
-## Input en Apify (Form / JSON)
+## Input (usuarios reales)
 
-No uses claves inventadas (`helloWorld`, etc.). El JSON válido es solo:
+No hay valores por defecto en el schema: **`origin` y `destination` vienen del usuario** (o los manda tu backend al llamar la API de Apify con el mismo JSON que arma `enqueueScraperJob`).
+
+Forma del cuerpo (solo estas claves; `additionalProperties` está en `false`):
 
 ```json
 {
-  "origin": "Rosario",
-  "destination": "San Carlos de Bariloche",
+  "origin": "<texto del usuario>",
+  "destination": "<texto del usuario>",
   "departureDate": "2026-06-15",
-  "sessionId": "demo-1"
+  "sessionId": "<uuid sesión CouchChain>"
 }
 ```
 
-`origin` y `destination` son obligatorios. El schema ahora trae **default/prefill** para probar con un clic. En JSON, si borrás todo, usá al menos esas dos claves.
+En la consola Apify, si probás a mano, completá Origen y Destino con datos reales; al integrar desde CouchChain, el input lo construye tu servidor a partir del plan / intent.
 
 ## Local
 

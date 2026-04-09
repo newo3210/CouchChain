@@ -7,30 +7,25 @@
     "origin": {
       "title": "Origen",
       "type": "string",
-      "description": "Lugar de salida (ciudad, país). No uses otras claves en el JSON: solo origin, destination, etc.",
-      "editor": "textfield",
-      "prefill": "Rosario",
-      "default": "Rosario"
+      "description": "Texto de lugar de salida del usuario (ciudad, región o país).",
+      "editor": "textfield"
     },
     "destination": {
       "title": "Destino",
       "type": "string",
-      "description": "Lugar de llegada",
-      "editor": "textfield",
-      "prefill": "San Carlos de Bariloche",
-      "default": "San Carlos de Bariloche"
+      "description": "Texto de lugar de llegada del usuario.",
+      "editor": "textfield"
     },
     "departureDate": {
       "title": "Fecha de salida",
       "type": "string",
-      "description": "Opcional — YYYY-MM-DD",
-      "editor": "textfield",
-      "prefill": "2026-06-15"
+      "description": "Opcional. Preferir YYYY-MM-DD si el usuario la indicó.",
+      "editor": "textfield"
     },
     "sessionId": {
       "title": "ID de sesión",
       "type": "string",
-      "description": "Opcional — correlación con la app CouchChain",
+      "description": "Opcional. ID de sesión CouchChain para correlación.",
       "editor": "textfield"
     }
   },
