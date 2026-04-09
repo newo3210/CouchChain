@@ -95,10 +95,9 @@ Documento de referencia para **cuentas, productos habilitados y credenciales**, 
 
 | Campo | Detalle |
 |--------|---------|
-| **Uso** | Precios de vuelos: por defecto en este repo **SerpAPI** (`engine=google_flights`) desde el worker; Crawlee/Apify como camino alterno si scrapeás HTML propio. Jobs async con Redis. |
-| **Componentes** | `npm run worker` (BullMQ consumer), Redis (`REDIS_URL`, p. ej. Upstash `rediss://`), opcional PostgreSQL para caché. |
-| **Variables típicas** | `REDIS_URL`; `SERPAPI_API_KEY` para precios reales; `SCRAPER_FORCE_STUB=true` fuerza datos demo. Opcional `SERPAPI_GL`, `SERPAPI_HL` (país e idioma de la búsqueda Google Flights). |
-| **IATA obligatorio para SerpAPI** | El worker llama Google Flights con `departure_id` / `arrival_id` IATA. El usuario debe mencionarlos en el chat (ej. *«de ROS a BRC»*); el parser (`dep_iata` / `arr_iata`) los pasa al job. Sin IATA hay **stub** y aviso en log. |
+| **Uso** | Precios de vuelos/buses donde no hay API gratuita; Crawlee/Apify en **Node local**; jobs async. |
+| **Componentes** | Worker Node (consumer), Redis para Bull/Bee Queue, PostgreSQL para estado/cache y *freshness*. |
+| **Variables típicas** | `REDIS_URL`; opcional `SCRAPER_CONCURRENCY`, `PROXY_LIST` (si rotación propia). |
 | **CAPTCHA** | Solo si es crítico: proveedor tipo 2captcha — `TWO_CAPTCHA_API_KEY` (u otro). |
 | **Notas legales** | Uso interno para agregación/comparación; respetar robots/ToS de cada sitio; selectores frágiles — aislar en módulo configurable. |
 | **UX** | El Gatito debe poder decir: *“Precios verificados [fuente] hace X minutos”* tras el job; no bloquear ruta terrestre mientras tanto. |
@@ -143,8 +142,8 @@ Documento de referencia para **cuentas, productos habilitados y credenciales**, 
 
 | Campo | Detalle |
 |--------|---------|
-| **Uso** | Enriquecimiento vía resultados de búsqueda (SERP) cuando convenga frente a otras fuentes. |
-| **Variable** | `SERPAPI_API_KEY` (solo servidor). |
+| **Uso** | Google Flights vía API (`engine=google_flights`) para precios N3. Mismo flujo en **worker** (`.env.local`) y en **Actor Apify** `actors/couchchain-scraper`: secret `SERPAPI_API_KEY` + input con `dep_iata` / `arr_iata`. |
+| **Variable** | `SERPAPI_API_KEY` (solo servidor / secret del Actor). Opcional `SERPAPI_GL`, `SERPAPI_HL`. |
 
 ---
 
@@ -201,11 +200,8 @@ NEXT_PUBLIC_LEAFLET_ROUTING_SERVICE_URL=
 GRAPHHOPPER_API_KEY=
 # GRAPHHOPPER_BASE_URL=
 
-# Enriquecimiento / N3 precios vuelo (SerpAPI Google Flights + worker)
+# Enriquecimiento opcional
 SERPAPI_API_KEY=
-# SCRAPER_FORCE_STUB=
-# SERPAPI_GL=   SERPAPI_HL=
-
 AVIATIONSTACK_API_KEY=
 
 # Nivel 2

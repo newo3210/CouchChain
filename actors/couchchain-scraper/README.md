@@ -1,6 +1,8 @@
-# CouchChain — Actor Apify (stub)
+# CouchChain — Actor Apify (SerpAPI / Google Flights)
 
-Apify **no** compila solo tu app Next.js: hace `docker build` en **una carpeta** que tenga `Dockerfile` + `.actor/actor.json`.
+Precios **reales** cuando configurás **`SERPAPI_API_KEY`** como secret del Actor y mandás **`dep_iata`** + **`arr_iata`** en el input (3 letras IATA).
+
+Apify **no** compila solo tu app Next.js: el build usa esta carpeta (`Dockerfile` + `.actor/actor.json`).
 
 ## En la consola Apify (mismo repo Git que CouchChain)
 
@@ -11,22 +13,28 @@ Apify **no** compila solo tu app Next.js: hace `docker build` en **una carpeta**
 
 Sin la carpeta, Apify intenta construir la raíz del monorepo (Next.js) y no es un Actor válido.
 
-## Input (usuarios reales)
+## Secrets / env en Apify
 
-No hay valores por defecto en el schema: **`origin` y `destination` vienen del usuario** (o los manda tu backend al llamar la API de Apify con el mismo JSON que arma `enqueueScraperJob`).
+- **`SERPAPI_API_KEY`** (obligatoria para cotizar): *Settings → Environment variables* → marcá como **Secret**.
+- Opcional: **`SERPAPI_GL`** (ej. `ar`), **`SERPAPI_HL`** (ej. `es`) — igual que en el monorepo.
 
-Forma del cuerpo (solo estas claves; `additionalProperties` está en `false`):
+## Input (usuario / API)
+
+`origin` y `destination` son obligatorios (texto del usuario). Para **precios SerpAPI** hace falta también **`dep_iata`** y **`arr_iata`** (el Gatito los extrae si el usuario dice «de ROS a BRC», etc.). Opcionales: `departureDate`, `sessionId`, `currency`.
 
 ```json
 {
-  "origin": "<texto del usuario>",
-  "destination": "<texto del usuario>",
+  "origin": "Rosario",
+  "destination": "Bariloche",
   "departureDate": "2026-06-15",
-  "sessionId": "<uuid sesión CouchChain>"
+  "sessionId": "…",
+  "dep_iata": "ROS",
+  "arr_iata": "BRC",
+  "currency": "ARS"
 }
 ```
 
-En la consola Apify, si probás a mano, completá Origen y Destino con datos reales; al integrar desde CouchChain, el input lo construye tu servidor a partir del plan / intent.
+Salida en el **dataset**: objeto con `source: "serpapi-google-flights"` y array `prices` (`provider`, `price`, `currency`, `mode`, `departure`). Sin IATA: `source: "serpapi-skipped"` y `prices: []`. Sin API key: `source: "error"`.
 
 ## Local
 
@@ -38,6 +46,6 @@ npm start
 
 (Requiere entorno Apify local o `apify run` si usás CLI.)
 
-## Siguiente paso
+## Integración CouchChain
 
-Reemplazar `src/main.js` por Crawlee, variables de entorno en **Settings → Environment** del Actor, y opcionalmente que tu backend llame la **API de ejecución** de Apify en lugar del stub en `workers/scrape-worker.ts`.
+Tu backend puede lanzar el Actor con la **API de Apify** pasando el mismo input que hoy encolás para el worker (incluidos `dep_iata`, `arr_iata`, `currency`). Crawlee/HTML propio es opcional si SerpAPI cubre tus rutas.

@@ -7,7 +7,7 @@
     "origin": {
       "title": "Origen",
       "type": "string",
-      "description": "Texto de lugar de salida del usuario (ciudad, región o país).",
+      "description": "Texto de lugar de salida del usuario.",
       "editor": "textfield"
     },
     "destination": {
@@ -19,13 +19,31 @@
     "departureDate": {
       "title": "Fecha de salida",
       "type": "string",
-      "description": "Opcional. Preferir YYYY-MM-DD si el usuario la indicó.",
+      "description": "Opcional. YYYY-MM-DD recomendado.",
       "editor": "textfield"
     },
     "sessionId": {
       "title": "ID de sesión",
       "type": "string",
-      "description": "Opcional. ID de sesión CouchChain para correlación.",
+      "description": "Opcional. Correlación con CouchChain.",
+      "editor": "textfield"
+    },
+    "dep_iata": {
+      "title": "IATA salida",
+      "type": "string",
+      "description": "Opcional pero necesario para precios SerpAPI. 3 letras, ej. ROS, EZE.",
+      "editor": "textfield"
+    },
+    "arr_iata": {
+      "title": "IATA llegada",
+      "type": "string",
+      "description": "Opcional pero necesario para precios SerpAPI. 3 letras, ej. BRC, AEP.",
+      "editor": "textfield"
+    },
+    "currency": {
+      "title": "Moneda (SerpAPI)",
+      "type": "string",
+      "description": "Opcional. Código ISO para precios (ARS, USD, …). Por defecto USD.",
       "editor": "textfield"
     }
   },
