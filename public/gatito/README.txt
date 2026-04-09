@@ -8,7 +8,9 @@ Opcional — sustituir por GIF pixel-art con el mismo nombre base:
   error.gif      — cabeza inclinada / ojitos tristes
   sleeping.gif   — Zzz encima de la cabeza
 
-Y en GatitoAssistant.tsx cambiar SPRITES a las rutas .gif.
+Hay también *.gif (1×1 px, placeholder) para clientes viejos o caché que aún pidan .gif sin 404.
+
+Para pixel-art real: sustituir esos GIF y en GatitoAssistant.tsx usar rutas .gif en SPRITES si querés animación.
 
 Especificaciones (COUCHCHAIN-LLM.md §5):
 - Pixel art, 64×64 px base, fondo transparente

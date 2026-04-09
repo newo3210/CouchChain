@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { parseIntentWithMeta, synthesizeRoute } from "@/lib/groq";
+import { geocodeNominatim } from "@/lib/nominatim";
 import { geocodeDiagnostics } from "@/lib/photon";
 import { getRoute } from "@/lib/osrm";
 import { getScheduledFlights } from "@/lib/aviationstack";
@@ -50,6 +51,25 @@ export async function POST(req: NextRequest) {
   // ── N0: Parse intent ────────────────────────────────────────────────────────
   const { intent, meta: parseMeta } = await parseIntentWithMeta(message);
 
+  if (intent.parseFailed && parseMeta.groqApiError) {
+    const debug: RoutePlanErrorDebug = {
+      stage: "parse",
+      zodOk: false,
+      groqApiError: parseMeta.groqApiError,
+      heuristicUsed: parseMeta.heuristicUsed,
+    };
+    attachGroqPreview(debug, parseMeta, clientDebug);
+    return NextResponse.json(
+      {
+        error:
+          "No pude conectar con el servicio de interpretación (IA). Revisá GROQ_API_KEY en el servidor o intentá de nuevo más tarde.",
+        intent,
+        debug,
+      },
+      { status: 503 },
+    );
+  }
+
   if (
     intent.parseFailed ||
     !intent.origin.trim() ||
@@ -60,6 +80,7 @@ export async function POST(req: NextRequest) {
       zodOk: parseMeta.zodOk,
       heuristicUsed: parseMeta.heuristicUsed,
       zodIssueSummaries: parseMeta.zodIssueSummaries,
+      groqApiError: parseMeta.groqApiError,
     };
     attachGroqPreview(debug, parseMeta, clientDebug);
     return NextResponse.json(
@@ -78,18 +99,34 @@ export async function POST(req: NextRequest) {
     : undefined;
   const photonLang = process.env.PHOTON_LANG;
 
-  // ── N0: Geocode (Photon / GeoJSON). Destino con sesgo cerca del origen si existe.
-  const originDiag = await geocodeDiagnostics(intent.origin);
+  // ── N0: Geocode (Photon primero; Nominatim como respaldo — política ~1 req/s en Nominatim)
+  const originDiag = await geocodeDiagnostics(intent.origin, {
+    lang: photonLang,
+    limit: photonLimit,
+  });
+  let originCoord = originDiag.coord;
+  let nominatimOriginTried = false;
+  if (!originCoord) {
+    originCoord = await geocodeNominatim(intent.origin);
+    nominatimOriginTried = true;
+  }
+
   const destDiag = await geocodeDiagnostics(intent.destination, {
-    bias: originDiag.coord
-      ? { lat: originDiag.coord.lat, lng: originDiag.coord.lng }
+    bias: originCoord
+      ? { lat: originCoord.lat, lng: originCoord.lng }
       : undefined,
     lang: photonLang,
     limit: photonLimit,
   });
-
-  const originCoord = originDiag.coord;
-  const destCoord = destDiag.coord;
+  let destCoord = destDiag.coord;
+  let nominatimDestTried = false;
+  if (!destCoord) {
+    if (nominatimOriginTried) {
+      await new Promise((r) => setTimeout(r, 1100));
+    }
+    destCoord = await geocodeNominatim(intent.destination);
+    nominatimDestTried = true;
+  }
 
   if (!originCoord || !destCoord) {
     const debug: RoutePlanErrorDebug = {
@@ -104,6 +141,8 @@ export async function POST(req: NextRequest) {
       originFeatureCount: originDiag.featureCount,
       destFeatureCount: destDiag.featureCount,
       heuristicUsed: parseMeta.heuristicUsed,
+      nominatimOriginTried,
+      nominatimDestTried,
     };
     attachGroqPreview(debug, parseMeta, clientDebug);
     return NextResponse.json(

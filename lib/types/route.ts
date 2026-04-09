@@ -164,6 +164,11 @@ export interface RoutePlanErrorDebug {
   groqRawPreview?: string;
   zodIssueSummaries?: string[];
   heuristicUsed?: boolean;
+  /** Error al llamar a Groq (clave, red, cuota). */
+  groqApiError?: string;
+  /** Tras Photon vacío, se llamó a Nominatim para esa pata. */
+  nominatimOriginTried?: boolean;
+  nominatimDestTried?: boolean;
 }
 
 /** Filas devueltas por el job N3 (BullMQ o Apify), no segmentos de ruta OSRM. */

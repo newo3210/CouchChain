@@ -121,7 +121,7 @@ const IntentSchema = z.object({
 const PARSE_SYSTEM = `Eres el parser de intención de CouchChain.
 Extrae del mensaje del usuario y devuelve UN objeto JSON. No inventes lugares que el usuario no dijo.
 
-Salida: SOLO el JSON, una sola pieza. Prohibido: texto antes/después, markdown, triple backtick (\`\`\`), bloques \`\`\`json.
+Salida: SOLO un objeto JSON (una sola pieza; no array raíz). Prohibido: texto antes/después, markdown, triple backtick (\`\`\`), bloques \`\`\`json.
 
 Incluye SIEMPRE estas claves (obligatorias): origin, destination, budget, currency, interests.
 - budget: "low" | "medium" | "high" o null si no hay pistas de presupuesto.
@@ -255,22 +255,85 @@ export type IntentParseMeta = {
   zodOk: boolean;
   heuristicUsed: boolean;
   zodIssueSummaries?: string[];
+  /** Set if the Groq API call failed (network, auth, quota). */
+  groqApiError?: string;
 };
 
 export async function parseIntentWithMeta(
   userMessage: string,
 ): Promise<{ intent: ParsedIntent; meta: IntentParseMeta }> {
-  const completion = await getGroq().chat.completions.create({
-    model: MODEL,
-    messages: [
-      { role: "system", content: PARSE_SYSTEM },
-      { role: "user", content: userMessage },
-    ],
-    temperature: 0.1,
-    max_tokens: 512,
-  });
+  let raw = "{}";
 
-  const raw = completion.choices[0]?.message?.content ?? "{}";
+  try {
+    const baseReq = {
+      model: MODEL,
+      messages: [
+        { role: "system" as const, content: PARSE_SYSTEM },
+        { role: "user" as const, content: userMessage },
+      ],
+      temperature: 0.1,
+      max_tokens: 512,
+    };
+    let completion;
+    try {
+      completion = await getGroq().chat.completions.create({
+        ...baseReq,
+        response_format: { type: "json_object" },
+      });
+    } catch {
+      completion = await getGroq().chat.completions.create(baseReq);
+    }
+    raw = completion.choices[0]?.message?.content ?? "{}";
+  } catch (e) {
+    const errBrief =
+      e instanceof Error
+        ? e.message.length > 220
+          ? `${e.message.slice(0, 220)}…`
+          : e.message
+        : String(e);
+    const fromText = heuristicExtractPlaces(userMessage);
+    if (fromText) {
+      return {
+        intent: {
+          ...fromText,
+          budget: null,
+          currency: "ARS",
+          interests: [],
+          dep_iata: undefined,
+          arr_iata: undefined,
+          rawQuery: userMessage,
+        },
+        meta: {
+          groqRawPreview: "",
+          jsonOk: false,
+          zodOk: false,
+          heuristicUsed: true,
+          groqApiError: errBrief,
+        },
+      };
+    }
+    return {
+      intent: {
+        origin: "",
+        destination: "",
+        budget: null,
+        currency: "ARS",
+        interests: [],
+        dep_iata: undefined,
+        arr_iata: undefined,
+        rawQuery: userMessage,
+        parseFailed: true,
+      },
+      meta: {
+        groqRawPreview: "",
+        jsonOk: false,
+        zodOk: false,
+        heuristicUsed: false,
+        groqApiError: errBrief,
+      },
+    };
+  }
+
   const groqRawPreview = raw.length > 500 ? `${raw.slice(0, 500)}…` : raw;
 
   let parsed: unknown;

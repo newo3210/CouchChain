@@ -131,7 +131,10 @@ export async function geocodeDiagnostics(
 ): Promise<GeocodeDiagnostics> {
   const url = buildPhotonSearchUrl(query, { ...options, limit: options.limit ?? 1 });
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    const res = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
     if (!res.ok) {
       return { coord: null, httpStatus: res.status, featureCount: 0 };
     }
@@ -167,7 +170,10 @@ export async function geocodeAll(
 ): Promise<PhotonGeoJsonFeature[]> {
   const url = buildPhotonSearchUrl(query, options);
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    const res = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
     if (!res.ok) return [];
     const data = (await res.json()) as PhotonGeoJsonResponse;
     if (data.type !== "FeatureCollection" || !Array.isArray(data.features)) {
