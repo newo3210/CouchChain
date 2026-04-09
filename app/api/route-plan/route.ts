@@ -135,6 +135,9 @@ export async function POST(req: NextRequest) {
         destination: intent.destination,
         departureDate: intent.departureDate,
         sessionId,
+        dep_iata: intent.dep_iata,
+        arr_iata: intent.arr_iata,
+        currency: intent.currency,
       });
     } catch {
       // N3 failure is non-blocking

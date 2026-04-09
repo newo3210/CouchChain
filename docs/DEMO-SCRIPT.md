@@ -8,7 +8,7 @@ Para presentación a stakeholders (IBM / Tezos / Etherlink).
 
 1. Tener `npm run dev` corriendo en una terminal.
 2. Tener MetaMask configurado con la red **Etherlink Shadownet Testnet** (Chain ID 128123) y saldo de XTZ de prueba (faucet en docs.etherlink.com).
-3. Tener `npm run worker` corriendo si quieres demostrar precios scrapeados.
+3. Tener `npm run worker` corriendo con `REDIS_URL` y `SERPAPI_API_KEY` si quieres precios reales (Google Flights vía SerpAPI). En el mensaje incluí códigos IATA (ej. «de ROS a BRC»); sin IATA el worker usa datos stub.
 4. Tener `.env.local` con todas las keys (mínimo: `GROQ_API_KEY` y `NEXT_PUBLIC_CONTRACT_ADDRESS`).
 
 ---

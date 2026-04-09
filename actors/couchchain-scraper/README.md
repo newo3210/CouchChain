@@ -21,6 +21,10 @@ npm start
 
 (Requiere entorno Apify local o `apify run` si usás CLI.)
 
+## Precios reales en CouchChain (fuente principal)
+
+En el monorepo, el worker **`npm run worker`** ya puede traer precios vía **SerpAPI** (`SERPAPI_API_KEY` + IATA en el mensaje del usuario). Este Actor Apify sigue siendo útil si querés Crawlee en la nube; no duplica SerpAPI salvo que lo implementes aquí también.
+
 ## Siguiente paso
 
-Reemplazar `src/main.js` por Crawlee, variables de entorno en **Settings → Environment** del Actor, y opcionalmente que tu backend llame la **API de ejecución** de Apify en lugar del stub en `workers/scrape-worker.ts`.
+Reemplazar `src/main.js` por Crawlee, variables de entorno en **Settings → Environment** del Actor, o integrar runs de Apify desde el backend si movés el scrape a la plataforma Apify.

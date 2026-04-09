@@ -1,64 +1,35 @@
 /**
  * scrape-worker.ts
  * Run with: npm run worker
- * Consumes "scrape-prices" queue and extracts flight/bus prices.
+ * Consumes "scrape-prices" queue and obtiene precios vía SerpAPI (Google Flights) o stub.
  *
- * In production swap the STUB implementation for a real Crawlee actor.
- * The interface is stable so the rest of the codebase doesn't change.
+ * Variables: REDIS_URL, SERPAPI_API_KEY (opcional), SCRAPER_FORCE_STUB=true para demo.
+ * Lee .env y .env.local si existen (para Upstash / claves en local).
  */
+import { config } from "dotenv";
+import { existsSync } from "fs";
+import { resolve } from "path";
 import { Worker, Job } from "bullmq";
 import { ScrapeJobData } from "../lib/scrape-queue";
-import {
-  RawScrapedPrice,
-  validatePrices,
-} from "../lib/validation-pipeline";
+import { fetchFlightPricesForJob } from "../lib/scrape-flights";
+import { RawScrapedPrice, validatePrices } from "../lib/validation-pipeline";
+import { getBullmqConnection } from "../lib/redis-bullmq";
 
-const REDIS_URL = process.env.REDIS_URL;
-const connection = REDIS_URL
-  ? (() => {
-      const u = new URL(REDIS_URL);
-      return {
-        host: u.hostname,
-        port: Number(u.port) || 6379,
-        password: u.password || undefined,
-      };
-    })()
-  : {
-      host: process.env.REDIS_HOST ?? "localhost",
-      port: Number(process.env.REDIS_PORT ?? 6379),
-    };
+const root = process.cwd();
+const envPath = resolve(root, ".env");
+const envLocalPath = resolve(root, ".env.local");
+if (existsSync(envPath)) config({ path: envPath });
+if (existsSync(envLocalPath)) config({ path: envLocalPath, override: true });
 
-// ─── Stub scraper (replace with Crawlee in production) ───────────────────────
-
-async function scrapeFlightPrices(
-  _origin: string,
-  _destination: string,
-  _departureDate?: string,
-): Promise<RawScrapedPrice[]> {
-  // TODO: replace with real Crawlee/Apify actor
-  // Example real implementation:
-  //   const crawler = new PlaywrightCrawler({ ... });
-  //   await crawler.run(["https://www.google.com/travel/flights?..."]);
-  //
-  // For demo/dev we return realistic stub data
-  await new Promise((r) => setTimeout(r, 1500)); // simulate scraping delay
-
-  return [
-    {
-      provider: "JetSmart (simulado)",
-      price: 58000,
-      currency: "ARS",
-      mode: "plane",
-      departure: new Date(Date.now() + 86400000 * 3).toISOString(),
-    },
-    {
-      provider: "Aerolíneas Argentinas (simulado)",
-      price: 95000,
-      currency: "ARS",
-      mode: "plane",
-      departure: new Date(Date.now() + 86400000 * 4).toISOString(),
-    },
-  ];
+async function scrapeFlightPrices(job: ScrapeJobData): Promise<RawScrapedPrice[]> {
+  return fetchFlightPricesForJob({
+    origin: job.origin,
+    destination: job.destination,
+    departureDate: job.departureDate,
+    dep_iata: job.dep_iata,
+    arr_iata: job.arr_iata,
+    currency: job.currency,
+  });
 }
 
 // ─── Worker ───────────────────────────────────────────────────────────────────
@@ -66,17 +37,20 @@ async function scrapeFlightPrices(
 const worker = new Worker<ScrapeJobData, RawScrapedPrice[]>(
   "scrape-prices",
   async (job: Job<ScrapeJobData>) => {
-    const { origin, destination, departureDate } = job.data;
-    console.log(`[worker] Processing job ${job.id}: ${origin} → ${destination}`);
+    const { origin, destination, dep_iata, arr_iata } = job.data;
+    console.log(
+      `[worker] Processing job ${job.id}: ${origin} → ${destination}` +
+        (dep_iata && arr_iata ? ` (${dep_iata}-${arr_iata})` : ""),
+    );
 
-    const raw = await scrapeFlightPrices(origin, destination, departureDate);
+    const raw = await scrapeFlightPrices(job.data);
     const validated = validatePrices(raw);
 
     console.log(`[worker] Job ${job.id} done: ${validated.length} prices validated`);
     return validated;
   },
   {
-    connection,
+    connection: getBullmqConnection(),
     concurrency: 3,
   },
 );

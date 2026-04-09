@@ -74,7 +74,7 @@ Si el usuario nombra varios lugares claros de partida y llegada, origin = salida
 Opcionales (omite la clave, o usa null):
 - departureDate: fecha o expresión ("en julio", "próximo finde").
 - durationDays: número de días si hay duración.
-- dep_iata / arr_iata: solo si menciona código IATA de aeropuerto (3 letras).`;
+- dep_iata / arr_iata: si menciona aeropuertos (3 letras IATA, ej. ROS, EZE, BRC, MAD), extraelos; permiten cotizar vuelos reales en segundo plano.`;
 
 export async function parseIntent(userMessage: string): Promise<ParsedIntent> {
   const completion = await getGroq().chat.completions.create({
