@@ -5,17 +5,19 @@ import { geocodeNominatim } from "@/lib/nominatim";
 import { geocodeDiagnostics } from "@/lib/photon";
 import { getRoute } from "@/lib/osrm";
 import { getScheduledFlights } from "@/lib/aviationstack";
-import type { FlightAlternative } from "@/lib/types/route";
 import { getWeather } from "@/lib/open-meteo";
 import { getTransitFeeds } from "@/lib/transitland";
 import { enqueueScraperJob } from "@/lib/scrape-queue";
 import {
+  type FlightAlternative,
+  type ParsedIntent,
   RoutePlan,
   RoutePlanErrorDebug,
   RoutePlanResponse,
   Waypoint,
 } from "@/lib/types/route";
 import { randomUUID } from "crypto";
+import { resolveIataForEndpoint } from "@/lib/iata-resolve";
 
 const BodySchema = z.object({
   message: z.string().min(1).max(1000),
@@ -155,6 +157,20 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const intentWithIata: ParsedIntent = {
+    ...intent,
+    dep_iata: resolveIataForEndpoint(
+      intent.dep_iata,
+      intent.origin,
+      originCoord.name,
+    ),
+    arr_iata: resolveIataForEndpoint(
+      intent.arr_iata,
+      intent.destination,
+      destCoord.name,
+    ),
+  };
+
   // ── N0: Route (OSRM) ────────────────────────────────────────────────────────
   const routeResult = await getRoute(originCoord, destCoord);
 
@@ -185,22 +201,25 @@ export async function POST(req: NextRequest) {
     transportSegments: routeResult ? [routeResult.segment] : [],
     weather: weather ?? undefined,
     transitFeeds: transitFeeds,
-    parsedIntent: intent,
+    parsedIntent: intentWithIata,
   };
 
   // ── Aviationstack (opcional): vuelos programados si hay IATA en el intent
   let flightAlternatives: FlightAlternative[] | undefined;
   if (
     process.env.AVIATIONSTACK_API_KEY &&
-    intent.dep_iata &&
-    intent.arr_iata
+    intentWithIata.dep_iata &&
+    intentWithIata.arr_iata
   ) {
     const date =
-      intent.departureDate &&
-      /^\d{4}-\d{2}-\d{2}$/.test(intent.departureDate)
-        ? intent.departureDate
+      intentWithIata.departureDate &&
+      /^\d{4}-\d{2}-\d{2}$/.test(intentWithIata.departureDate)
+        ? intentWithIata.departureDate
         : undefined;
-    const rows = await getScheduledFlights(intent.dep_iata, intent.arr_iata, {
+    const rows = await getScheduledFlights(
+      intentWithIata.dep_iata,
+      intentWithIata.arr_iata,
+      {
       date,
       limit: 8,
     });
@@ -236,13 +255,13 @@ export async function POST(req: NextRequest) {
   if (needsAirPrices) {
     try {
       scrapeJobId = await enqueueScraperJob({
-        origin: intent.origin,
-        destination: intent.destination,
-        departureDate: intent.departureDate,
+        origin: intentWithIata.origin,
+        destination: intentWithIata.destination,
+        departureDate: intentWithIata.departureDate,
         sessionId,
-        dep_iata: intent.dep_iata,
-        arr_iata: intent.arr_iata,
-        currency: intent.currency,
+        dep_iata: intentWithIata.dep_iata,
+        arr_iata: intentWithIata.arr_iata,
+        currency: intentWithIata.currency,
       });
     } catch {
       // N3 failure is non-blocking
@@ -252,7 +271,7 @@ export async function POST(req: NextRequest) {
   // ── Assemble full plan ──────────────────────────────────────────────────────
   const plan: RoutePlan = {
     id: randomUUID(),
-    parsedIntent: intent,
+    parsedIntent: intentWithIata,
     origin: originCoord,
     destination: destCoord,
     waypoints,
@@ -261,8 +280,8 @@ export async function POST(req: NextRequest) {
     transitFeeds,
     aiSynthesis,
     flightAlternatives,
-    tags: intent.interests,
-    estimatedBudget: { currency: intent.currency, amount: 0 },
+    tags: intentWithIata.interests,
+    estimatedBudget: { currency: intentWithIata.currency, amount: 0 },
     generatedAt: new Date().toISOString(),
     scrapeJob: scrapeJobId
       ? {

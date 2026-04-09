@@ -52,7 +52,7 @@ await Actor.main(async () => {
         "Falta SERPAPI_API_KEY. Agregala en el Actor: Settings → Environment / Secrets.",
       prices: [],
     });
-    Actor.log.info(
+    console.log(
       "SERPAPI_API_KEY no definida; configurá el secret en el Actor.",
     );
     return;
@@ -66,13 +66,13 @@ await Actor.main(async () => {
         "Google Flights (SerpAPI) necesita códigos IATA en dep_iata y arr_iata. Tu backend debe enviarlos junto con origin/destination.",
       prices: [],
     });
-    Actor.log.info(
+    console.log(
       "Sin dep_iata/arr_iata: no se llama a SerpAPI. Añadí esos campos en el input.",
     );
     return;
   }
 
-  Actor.log.info(
+  console.log(
     `SerpAPI Google Flights: ${depIata} → ${arrIata} (${outboundDate}, ${currency})`,
   );
 

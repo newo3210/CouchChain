@@ -1,5 +1,10 @@
 "use client";
-import { RoutePlan, TransportSegment } from "@/lib/types/route";
+import { useEffect, useState } from "react";
+import {
+  RoutePlan,
+  ScrapedFlightQuote,
+  TransportSegment,
+} from "@/lib/types/route";
 
 const MODE_LABELS: Record<string, string> = {
   car: "Auto / Bus",
@@ -44,9 +49,22 @@ interface Props {
   plan: RoutePlan | null;
   scrapePending?: boolean;
   freshnessLabel?: string;
+  /** Al elegir una cotización del scraper se actualiza el segmento principal con ese precio. */
+  onSelectScrapedFlight?: (quote: ScrapedFlightQuote) => void;
 }
 
-export default function RouteLedger({ plan, scrapePending, freshnessLabel }: Props) {
+export default function RouteLedger({
+  plan,
+  scrapePending,
+  freshnessLabel,
+  onSelectScrapedFlight,
+}: Props) {
+  const flightQuotes = plan?.scrapedFlightQuotes ?? [];
+  const [flightPick, setFlightPick] = useState(0);
+
+  useEffect(() => {
+    setFlightPick(0);
+  }, [plan?.id, flightQuotes.length]);
   if (!plan) {
     return (
       <div className="p-4 text-sm text-[#8a8a8a] italic">
@@ -114,8 +132,79 @@ export default function RouteLedger({ plan, scrapePending, freshnessLabel }: Pro
       )}
 
       {plan.transitFeeds.length > 0 && (
-        <div className="text-xs text-[#8a8a8a]">
-          Operadores: {plan.transitFeeds.map((f) => f.operatorName).join(", ")}
+        <div className="space-y-1.5">
+          <span className="text-xs font-medium text-[#1a1a1a]">
+            Operadores de transporte ({plan.transitFeeds.length})
+          </span>
+          <ul className="max-h-40 overflow-y-auto space-y-1 pr-1">
+            {plan.transitFeeds.map((f, i) => (
+              <li
+                key={`${f.operatorName}-${i}`}
+                className="flex items-start gap-2 rounded-md border border-[#E8E8E8] bg-[#FAFAFA] px-2 py-1.5 text-xs text-[#5c5c5c]"
+              >
+                <span className="mt-0.5 text-[#8B7355]" aria-hidden>
+                  ◆
+                </span>
+                <span className="min-w-0 flex-1 leading-snug">
+                  <span className="text-[#1a1a1a]">{f.operatorName}</span>
+                  {f.feedUrl && (
+                    <a
+                      href={
+                        f.feedUrl.startsWith("http")
+                          ? f.feedUrl
+                          : `https://${f.feedUrl}`
+                      }
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-2 text-[#6B7FA8] hover:underline"
+                    >
+                      web
+                    </a>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {flightQuotes.length > 0 && (
+        <div className="p-3 rounded-lg bg-[#f0f4ec] border border-[#c5d4b8] text-xs space-y-2">
+          <span className="font-medium text-[#1a1a1a]">
+            Opciones de vuelo (precio)
+          </span>
+          <p className="text-[#5c5c5c] leading-snug">
+            Elegí una fila para fijar precio y operador en el primer tramo del itinerario.
+          </p>
+          <ul className="space-y-1" role="list">
+            {flightQuotes.map((q, i) => (
+              <li key={`${q.provider}-${i}-${q.price}`}>
+                <label className="flex cursor-pointer items-start gap-2 rounded-md border border-[#dce6d4] bg-white px-2 py-1.5 has-[:checked]:border-[#8B7355] has-[:checked]:bg-[#faf8f4]">
+                  <input
+                    type="radio"
+                    name="scraped-flight-quote"
+                    className="mt-1"
+                    checked={flightPick === i}
+                    onChange={() => {
+                      setFlightPick(i);
+                      onSelectScrapedFlight?.(q);
+                    }}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="font-medium text-[#1a1a1a]">
+                      {q.provider}
+                    </span>
+                    <span className="ml-2 font-mono text-[#6B8E6B]">
+                      {q.currency} {q.price.toLocaleString("es-AR")}
+                    </span>
+                    {q.departure && (
+                      <span className="block text-[#8a8a8a]">{q.departure}</span>
+                    )}
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

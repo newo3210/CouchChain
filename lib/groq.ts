@@ -141,7 +141,7 @@ Si hay dos topónimos claros y verbos como "ir", "viajar", "ruta" pero sin "de/a
 Opcionales (omite la clave, o usa null):
 - departureDate: fecha o expresión ("en julio", "próximo finde").
 - durationDays: número de días si hay duración.
-- dep_iata / arr_iata: solo si menciona código IATA de aeropuerto (3 letras).`;
+- dep_iata / arr_iata: si el viaje puede incluir avión, incluí el IATA del aeropuerto principal de cada ciudad cuando lo sepas (ej. Lisboa=LIS, Madrid=MAD, Buenos Aires=EZE o AEP, París=CDG). Si el usuario da código explícito (BCN), usalo.`;
 
 /** Si el modelo devuelve JSON inválido, intentar extraer origen/destino del texto. */
 function heuristicExtractPlaces(msg: string): { origin: string; destination: string } | null {
@@ -433,12 +433,14 @@ const SYNTH_SYSTEM = `Eres el Gatito de CouchChain, un asistente de rutas amigab
 Tienes los datos de una ruta (JSON). Genera una respuesta conversacional en español:
 1. Resumen de la ruta en 2-3 oraciones.
 2. Recomendación de clima si está disponible.
-3. Opciones de transporte encontradas.
+3. Transporte: NO listes todos los operadores. Si hay muchos, decí solo cuántos hay y que el usuario puede verlos y elegir en el panel «Itinerario» a la derecha; como mucho nombrá 2 ejemplos.
 4. Un consejo relacionado a los intereses del viajero.
-5. Si hay vuelos programados (Aviationstack), menciona brevemente 1-2 opciones sin inventar precios.
-Máximo 150 palabras. Tono cálido y directo. No uses listas largas.`;
+5. Vuelos: si hay datos de itinerario de aerolíneas en el JSON, mencioná 1–2 sin inventar precios; los precios comparados aparecen en el panel cuando el buscador termina.
+Máximo 150 palabras. Tono cálido y directo.`;
 
 export async function synthesizeRoute(plan: Partial<RoutePlan>): Promise<string> {
+  const feeds = plan.transitFeeds ?? [];
+  const sampleOps = feeds.slice(0, 3).map((f) => f.operatorName);
   const planSummary = JSON.stringify({
     origin: plan.origin?.name,
     destination: plan.destination?.name,
@@ -450,9 +452,14 @@ export async function synthesizeRoute(plan: Partial<RoutePlan>): Promise<string>
     weather: plan.weather
       ? `${plan.weather.temperatureC}°C, ${plan.weather.condition}`
       : null,
-    transitFeeds: plan.transitFeeds?.map((f) => f.operatorName),
+    transitOperatorCount: feeds.length,
+    transitOperatorsSample: sampleOps,
     interests: plan.parsedIntent?.interests,
     budget: plan.parsedIntent?.budget,
+    iata: {
+      dep: plan.parsedIntent?.dep_iata,
+      arr: plan.parsedIntent?.arr_iata,
+    },
     flights: plan.flightAlternatives?.map(
       (f) =>
         [f.airline, f.flightNumber, f.scheduledDeparture].filter(Boolean).join(" "),

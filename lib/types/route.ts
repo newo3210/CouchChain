@@ -51,6 +51,14 @@ export interface TransitFeed {
   coverage: string; // e.g. "Bariloche - Esquel"
 }
 
+/** Cotizaciones de vuelo devueltas por el scraper (SerpAPI / worker), seleccionables en UI. */
+export interface ScrapedFlightQuote {
+  provider: string;
+  price: number;
+  currency: string;
+  departure?: string;
+}
+
 export interface ScrapeJob {
   jobId: string;
   status: "queued" | "running" | "done" | "failed";
@@ -98,6 +106,8 @@ export interface RoutePlan {
   weather?: Weather;
   transitFeeds: TransitFeed[];
   scrapeJob?: ScrapeJob;
+  /** Ofertas de vuelo del job N3 (varias filas para elegir en el itinerario). */
+  scrapedFlightQuotes?: ScrapedFlightQuote[];
   /** Comparación / fallback de vuelos (Aviationstack u otras fuentes). */
   flightAlternatives?: FlightAlternative[];
   aiSynthesis: string;

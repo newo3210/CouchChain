@@ -6,7 +6,13 @@ import { RoutePlan } from "@/lib/types/route";
 import Header from "@/components/ui/Header";
 import RouteLedger from "@/components/map/RouteLedger";
 import MintButton from "@/components/ui/MintButton";
-import { freshnessLabel } from "@/lib/validation-pipeline";
+import type { RawScrapedPrice } from "@/lib/validation-pipeline";
+import {
+  freshnessLabel,
+  normalizeToPricedSegment,
+  validatePrices,
+} from "@/lib/validation-pipeline";
+import type { ScrapedFlightQuote } from "@/lib/types/route";
 
 // Leaflet must be client-only
 const RouteMap = dynamic(() => import("@/components/map/RouteMap"), {
@@ -50,26 +56,35 @@ export default function Home() {
           if (data.completedAt) {
             setFreshnessLabel(freshnessLabel(data.completedAt));
           }
-          // Update plan segments with verified prices
-          if (data.result?.length && plan) {
+          const raw = data.result as RawScrapedPrice[] | undefined;
+          if (raw?.length) {
+            const validated = validatePrices(raw);
+            const doneAt = data.completedAt
+              ? new Date(data.completedAt)
+              : new Date();
             setPlan((prev) => {
               if (!prev) return prev;
-              const updatedSegments = prev.transportSegments.map((seg, i) => {
-                const match = data.result[i];
-                if (!match) return seg;
-                return {
-                  ...seg,
-                  price: {
-                    amount: match.price,
-                    currency: match.currency,
-                    source: "scraper" as const,
-                    freshness: "live" as const,
-                    verifiedAt: data.completedAt,
-                  },
-                  transitProvider: match.provider,
-                };
-              });
-              return { ...prev, transportSegments: updatedSegments };
+              const segs = [...prev.transportSegments];
+              if (segs.length > 0) {
+                segs[0] = normalizeToPricedSegment(
+                  segs[0],
+                  raw,
+                  doneAt,
+                );
+              }
+              const scrapedFlightQuotes: ScrapedFlightQuote[] = validated.map(
+                (r) => ({
+                  provider: r.provider,
+                  price: r.price,
+                  currency: r.currency,
+                  departure: r.departure,
+                }),
+              );
+              return {
+                ...prev,
+                transportSegments: segs,
+                scrapedFlightQuotes,
+              };
             });
           }
         } else if (data.status === "failed") {
@@ -91,6 +106,27 @@ export default function Home() {
     setLedgerOpen(true);
     setMintSuccess(null);
     setFreshnessLabel("");
+  }, []);
+
+  const handlePickScrapedFlight = useCallback((quote: ScrapedFlightQuote) => {
+    setPlan((prev) => {
+      if (!prev?.transportSegments.length) return prev;
+      const segs = [...prev.transportSegments];
+      const head = segs[0];
+      segs[0] = {
+        ...head,
+        mode: "plane",
+        transitProvider: quote.provider,
+        price: {
+          amount: quote.price,
+          currency: quote.currency,
+          source: "scraper",
+          freshness: "live",
+          verifiedAt: new Date().toISOString(),
+        },
+      };
+      return { ...prev, transportSegments: segs };
+    });
   }, []);
 
   const handleWaypointDrag = useCallback(
@@ -146,6 +182,7 @@ export default function Home() {
                 plan={plan}
                 scrapePending={scrapePending}
                 freshnessLabel={currentFreshnessLabel}
+                onSelectScrapedFlight={handlePickScrapedFlight}
               />
               {plan && address && (
                 <div className="px-4 pb-4">

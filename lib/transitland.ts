@@ -32,11 +32,19 @@ export async function getTransitFeeds(
     });
     if (!res.ok) return [];
     const data: TLResponse = await res.json();
-    return (data.operators ?? []).map((op) => ({
-      operatorName: op.name,
-      feedUrl: op.website,
-      coverage: `Radio ${radiusKm}km`,
-    }));
+    const seen = new Set<string>();
+    const out: TransitFeed[] = [];
+    for (const op of data.operators ?? []) {
+      const name = (op.name ?? "").trim();
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      out.push({
+        operatorName: name,
+        feedUrl: op.website,
+        coverage: `Radio ${radiusKm}km`,
+      });
+    }
+    return out;
   } catch {
     return [];
   }

@@ -20,7 +20,7 @@ Sin la carpeta, Apify intenta construir la raíz del monorepo (Next.js) y no es 
 
 ## Input (usuario / API)
 
-`origin` y `destination` son obligatorios (texto del usuario). Para **precios SerpAPI** hace falta también **`dep_iata`** y **`arr_iata`** (el Gatito los extrae si el usuario dice «de ROS a BRC», etc.). Opcionales: `departureDate`, `sessionId`, `currency`.
+`origin` y `destination` son obligatorios (texto del usuario). Para **precios SerpAPI** hace falta **`dep_iata`** y **`arr_iata`** (3 letras). El **backend Next** (`/api/route-plan`) los rellena con el LLM y, si faltan, con una tabla heurística de ciudades frecuentes (ej. Lisboa→LIS); si la ruta es muy rara, conviene que el usuario mencione códigos IATA en el mensaje. Opcionales: `departureDate`, `sessionId`, `currency`.
 
 ```json
 {
