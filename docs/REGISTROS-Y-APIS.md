@@ -95,10 +95,10 @@ Documento de referencia para **cuentas, productos habilitados y credenciales**, 
 
 | Campo | Detalle |
 |--------|---------|
-| **Uso** | Precios de vuelos/buses donde no hay API gratuita; Crawlee/Apify en **Node local**; jobs async. |
-| **Componentes** | Worker Node (consumer), Redis para Bull/Bee Queue, PostgreSQL para estado/cache y *freshness*. |
-| **Variables típicas** | `REDIS_URL`; opcional `SCRAPER_CONCURRENCY`, `PROXY_LIST` (si rotación propia). |
-| **CAPTCHA** | Solo si es crítico: proveedor tipo 2captcha — `TWO_CAPTCHA_API_KEY` (u otro). |
+| **Uso** | Precios vía SerpAPI en el **Actor Apify** o en worker local. Si `APIFY_API_TOKEN` y `APIFY_ACTOR_ID` están en `.env.local`, el backend **inicia el run por REST** y el cliente hace poll a `/api/jobs/:id` como con BullMQ. Si no, hace falta `REDIS_URL` + `npm run worker` (u otro consumer). |
+| **Componentes** | Actor `actors/couchchain-scraper` en Apify (secrets del Actor: `SERPAPI_API_KEY`); en local: worker BullMQ si aplica. |
+| **Variables típicas** | Opción A: `APIFY_API_TOKEN`, `APIFY_ACTOR_ID` (id tipo `usuario~nombre-actor`). Opción B: `REDIS_URL`, worker. |
+| **CAPTCHA** | Solo si el scraper HTML lo exige — `TWO_CAPTCHA_API_KEY` (u otro). |
 | **Notas legales** | Uso interno para agregación/comparación; respetar robots/ToS de cada sitio; selectores frágiles — aislar en módulo configurable. |
 | **UX** | El Gatito debe poder decir: *“Precios verificados [fuente] hace X minutos”* tras el job; no bloquear ruta terrestre mientras tanto. |
 
@@ -208,6 +208,8 @@ AVIATIONSTACK_API_KEY=
 TRANSITLAND_API_KEY=
 
 # Nivel 3 (scraping async)
+# APIFY_API_TOKEN=
+# APIFY_ACTOR_ID=
 REDIS_URL=
 # TWO_CAPTCHA_API_KEY=
 

@@ -3,6 +3,14 @@ import { getJobStatus } from "@/lib/scrape-queue";
 import { freshnessLabel } from "@/lib/validation-pipeline";
 import { JobStatusResponse } from "@/lib/types/route";
 
+const STATUS_MAP: Record<string, JobStatusResponse["status"]> = {
+  waiting: "queued",
+  delayed: "queued",
+  active: "running",
+  completed: "done",
+  failed: "failed",
+};
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -14,23 +22,13 @@ export async function GET(
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
 
-  const statusMap: Record<string, JobStatusResponse["status"]> = {
-    waiting: "queued",
-    active: "running",
-    completed: "done",
-    failed: "failed",
-    delayed: "queued",
-  };
-
+  const mapped = STATUS_MAP[job.state] ?? "queued";
   const result = job.returnvalue ?? undefined;
-  const completedAt =
-    job.state === "completed"
-      ? new Date().toISOString()
-      : undefined;
+  const completedAt = job.completedAt;
 
   const response: JobStatusResponse & { freshnessLabel?: string } = {
     jobId: id,
-    status: statusMap[job.state] ?? "queued",
+    status: mapped,
     result,
     completedAt,
     freshnessLabel: completedAt ? freshnessLabel(completedAt) : undefined,

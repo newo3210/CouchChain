@@ -141,9 +141,18 @@ export interface RoutePlanResponse {
   scrapeJobId?: string; // present if N3 was enqueued
 }
 
+/** Filas devueltas por el job N3 (BullMQ o Apify), no segmentos de ruta OSRM. */
+export interface ScrapeJobPriceRow {
+  provider: string;
+  price: number;
+  currency: string;
+  departure?: string;
+  mode?: TransportMode;
+}
+
 export interface JobStatusResponse {
   jobId: string;
   status: ScrapeJob["status"];
-  result?: TransportSegment[];
+  result?: ScrapeJobPriceRow[];
   completedAt?: string;
 }

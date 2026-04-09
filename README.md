@@ -51,16 +51,16 @@ Terminal 1 — servidor Next.js:
 npm run dev
 ```
 
-Terminal 2 — worker de scraping (requiere Redis):
+**N3 precios (elige uno):**
 
-```bash
-npm run worker
-```
+- **Apify (recomendado si ya tenés el Actor):** en `.env.local` poné `APIFY_API_TOKEN` (Consola Apify → Integrations → API token) y `APIFY_ACTOR_ID` (ej. `tu_usuario~couchchain-price-scraper`). No hace falta Redis ni worker para ese paso.
+- **Worker local:** `REDIS_URL` + `npm run worker` (y `SERPAPI_API_KEY` en `.env.local` si querés precios reales sin Apify).
 
-Redis local (Docker):
+Redis local (Docker), solo si usás worker:
 
 ```bash
 docker run -d -p 6379:6379 redis:alpine
+npm run worker
 ```
 
 ---
@@ -75,7 +75,7 @@ docker run -d -p 6379:6379 redis:alpine
 | Geocoding / ruta N0   | Photon + OSRM                                        |
 | Clima N1              | Open-Meteo                                           |
 | Transporte público N2 | TransitLand                                          |
-| Precios N3            | Apify + Crawlee local, BullMQ + Redis                |
+| Precios N3            | Actor Apify (REST) o worker BullMQ + Redis + SerpAPI |
 | Cadena                | Etherlink testnet: `RoutePassport` + `TrustRegistry` |
 | IPFS                  | Pinata                                               |
 | Datos                 | PostgreSQL + Prisma                                  |
