@@ -12,13 +12,16 @@ Documento de referencia para **cuentas, productos habilitados y credenciales**, 
 |---|----------|---------------|-------------------|
 | 1 | Groq | Obligatorio (Gatito: parsing + síntesis) | ☐ |
 | 2 | Photon (geocoding) | Obligatorio (sin key en uso típico) | ☐ |
-| 3 | OSRM | Obligatorio (URL pública o instancia propia) | ☐ |
+| 3 | OSRM / ROUTING_BASE_URL | Obligatorio (URL pública o instancia propia; en mapa: LRM + OSRM público) | ☐ |
+| 3b | GraphHopper | Opcional (fallback de ruta en servidor si OSRM falla) | ☐ |
 | 4 | Open-Meteo | Obligatorio (sin key en uso típico) | ☐ |
 | 5 | TransitLand | Recomendado (transporte público; revisar cuotas/token) | ☐ |
 | 6 | Redis + worker scraping | Recomendado si Nivel 3 (Apify/Crawlee local, Bull/Bee Queue) | ☐ |
 | 7 | Pinata | Obligatorio (IPFS rutas + metadata Trust off-chain) | ☐ |
 | 8 | Etherlink testnet + wallet | Obligatorio (`RoutePassport` + `TrustRegistry`) | ☐ |
-| 9 | PostgreSQL | Recomendado (índice, caché, Puente de Confianza, jobs) | ☐ |
+| 9 | PostgreSQL / Supabase | Recomendado (índice, caché, Puente de Confianza, jobs; Supabase: anon + service role + DATABASE_URL) | ☐ |
+| 14 | SerpAPI | Opcional (enriquecimiento búsqueda / SERP) | ☐ |
+| 15 | Aviationstack | Opcional (vuelos programados; comparación si el scrap falla) | ☐ |
 | 10 | Email transaccional | Opcional (notificaciones host) | ☐ |
 | 11 | Tiles Leaflet | Según proveedor OSM/MapTiler/etc. | ☐ |
 | 12 | Solver CAPTCHA (p. ej. 2captcha) | Solo si el scraper lo exige | ☐ |
@@ -45,8 +48,8 @@ Documento de referencia para **cuentas, productos habilitados y credenciales**, 
 | **Uso** | Geocodificación de origen/destino sin coste de licencia Google. |
 | **Documentación** | [https://photon.komoot.io](https://photon.komoot.io) (API pública Komoot; existen instancias self-hosted). |
 | **Credencial** | Ninguna en el servicio público habitual. |
-| **Variables** | Opcional: `PHOTON_BASE_URL` si usas instancia propia. |
-| **Notas** | Respetar políticas de uso y *fair use* del endpoint público; para producción alta escala, instancia propia. |
+| **Variables** | `PHOTON_BASE_URL` (p. ej. `https://photon.komoot.io/api/?q=` — el código añade el término codificado tras `q=`). Opcional: `PHOTON_LIMIT`, `PHOTON_LANG`. |
+| **Notas** | La API devuelve GeoJSON `FeatureCollection` con `Point` y `properties` (nombre, ciudad, país, etc.). Para sesgo geográfico el código puede añadir `&lat=` y `&lon=`; también `&limit=` y `&lang=` según parámetros. Respetar *fair use* del endpoint público; para alta escala, instancia propia. |
 
 ---
 
@@ -57,8 +60,10 @@ Documento de referencia para **cuentas, productos habilitados y credenciales**, 
 | **Uso** | Geometría de ruta, tiempos/distancias sobre red vial. |
 | **Documentación** | [http://project-osrm.org](http://project-osrm.org) |
 | **Credencial** | Depende del host (servidor demo público sin key; producción: tu instancia). |
-| **Variable** | `OSRM_BASE_URL` (p. ej. `https://router.project-osrm.org` solo para pruebas). |
-| **Notas** | El servidor público tiene límites; no abusar. Auto-hospedar o proveedor para carga real. |
+| **Variables** | Preferido: `ROUTING_BASE_URL` — solo el prefijo del servicio **sin** el fragmento `lng,lat;lng,lat` (p. ej. `https://router.project-osrm.org/route/v1/driving`). El código concatena las coordenadas y los query params. Legado: `OSRM_BASE_URL` si `ROUTING_BASE_URL` no está definido. |
+| **Mapa (Next/Leaflet)** | `NEXT_PUBLIC_LEAFLET_ROUTING_SERVICE_URL` (base hasta `/route/v1`, p. ej. `https://router.project-osrm.org/route/v1`) para **leaflet-routing-machine** con `L.Routing.osrmv1({ serviceUrl })`. Opcional: `NEXT_PUBLIC_USE_LEAFLET_ROUTING_MACHINE`. |
+| **Fallback servidor** | `GRAPHHOPPER_API_KEY` (alias `GRASSHOPPER_API_KEY`) y opcionalmente `GRAPHHOPPER_BASE_URL` si OSRM no responde. |
+| **Notas** | El servidor público tiene límites; no abusar. Sin tiempo para OSRM propio: usar estos endpoints públicos + GraphHopper como respaldo. |
 
 ---
 
@@ -123,12 +128,31 @@ Documento de referencia para **cuentas, productos habilitados y credenciales**, 
 
 ---
 
-## 9. PostgreSQL
+## 9. PostgreSQL y Supabase
 
 | Campo | Detalle |
 |--------|---------|
 | **Uso** | Índice de rutas por wallet, solicitudes Puente de Confianza, resultados validados del scraper, caché OSRM/TransitLand. |
-| **Variable** | `DATABASE_URL` |
+| **PostgreSQL directo** | `DATABASE_URL` (cadena para Prisma). |
+| **Supabase** (opcional) | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (cliente público); `SUPABASE_SERVICE_ROLE_KEY` (solo servidor); referencias JWT del panel si aplica: `SUPABASE_JWT_ECC`, `SUPABASE_JWT_HS256`. Para Prisma suele bastar la URL de base de datos del proyecto en `DATABASE_URL`. |
+
+---
+
+## 9b. SerpAPI (opcional)
+
+| Campo | Detalle |
+|--------|---------|
+| **Uso** | Enriquecimiento vía resultados de búsqueda (SERP) cuando convenga frente a otras fuentes. |
+| **Variable** | `SERPAPI_API_KEY` (solo servidor). |
+
+---
+
+## 9c. Aviationstack (vuelos — opcional)
+
+| Campo | Detalle |
+|--------|---------|
+| **Uso** | Vuelos programados por aeropuertos IATA; útil como comparación o respaldo si el módulo de scraping falla. |
+| **Variable** | `AVIATIONSTACK_API_KEY` (solo servidor). |
 
 ---
 
@@ -167,8 +191,18 @@ Documento de referencia para **cuentas, productos habilitados y credenciales**, 
 GROQ_API_KEY=
 
 # Nivel 0
-# PHOTON_BASE_URL=
-OSRM_BASE_URL=
+PHOTON_BASE_URL=
+# PHOTON_LIMIT=  PHOTON_LANG=
+ROUTING_BASE_URL=
+# OSRM_BASE_URL=   # legado
+NEXT_PUBLIC_LEAFLET_ROUTING_SERVICE_URL=
+# NEXT_PUBLIC_USE_LEAFLET_ROUTING_MACHINE=
+GRAPHHOPPER_API_KEY=
+# GRAPHHOPPER_BASE_URL=
+
+# Enriquecimiento opcional
+SERPAPI_API_KEY=
+AVIATIONSTACK_API_KEY=
 
 # Nivel 2
 TRANSITLAND_API_KEY=
@@ -188,6 +222,12 @@ NEXT_PUBLIC_TRUST_REGISTRY_ADDRESS=
 
 # Datos
 DATABASE_URL=
+# Supabase (opcional)
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+# SUPABASE_JWT_ECC=
+# SUPABASE_JWT_HS256=
 
 # Opcional
 # RESEND_API_KEY=

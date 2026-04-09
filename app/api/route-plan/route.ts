@@ -3,6 +3,8 @@ import { z } from "zod";
 import { parseIntent, synthesizeRoute } from "@/lib/groq";
 import { geocode } from "@/lib/photon";
 import { getRoute } from "@/lib/osrm";
+import { getScheduledFlights } from "@/lib/aviationstack";
+import type { FlightAlternative } from "@/lib/types/route";
 import { getWeather } from "@/lib/open-meteo";
 import { getTransitFeeds } from "@/lib/transitland";
 import { enqueueScraperJob } from "@/lib/scrape-queue";
@@ -26,11 +28,17 @@ export async function POST(req: NextRequest) {
   // ── N0: Parse intent ────────────────────────────────────────────────────────
   const intent = await parseIntent(message);
 
-  // ── N0: Geocode origin and destination (Photon) ─────────────────────────────
-  const [originCoord, destCoord] = await Promise.all([
-    geocode(intent.origin),
-    geocode(intent.destination),
-  ]);
+  // ── N0: Geocode (Photon / GeoJSON). Destino con sesgo cerca del origen si existe.
+  const originCoord = await geocode(intent.origin);
+  const destCoord = await geocode(intent.destination, {
+    bias: originCoord
+      ? { lat: originCoord.lat, lng: originCoord.lng }
+      : undefined,
+    lang: process.env.PHOTON_LANG,
+    limit: process.env.PHOTON_LIMIT
+      ? Number(process.env.PHOTON_LIMIT)
+      : undefined,
+  });
 
   if (!originCoord || !destCoord) {
     return NextResponse.json(
@@ -75,8 +83,44 @@ export async function POST(req: NextRequest) {
     parsedIntent: intent,
   };
 
+  // ── Aviationstack (opcional): vuelos programados si hay IATA en el intent
+  let flightAlternatives: FlightAlternative[] | undefined;
+  if (
+    process.env.AVIATIONSTACK_API_KEY &&
+    intent.dep_iata &&
+    intent.arr_iata
+  ) {
+    const date =
+      intent.departureDate &&
+      /^\d{4}-\d{2}-\d{2}$/.test(intent.departureDate)
+        ? intent.departureDate
+        : undefined;
+    const rows = await getScheduledFlights(intent.dep_iata, intent.arr_iata, {
+      date,
+      limit: 8,
+    });
+    if (rows.length) {
+      flightAlternatives = rows.map((r) => ({
+        source: "aviationstack" as const,
+        airline: r.airline?.name,
+        flightNumber:
+          r.flight?.iata != null
+            ? String(r.flight.iata)
+            : r.flight?.number != null
+              ? String(r.flight.number)
+              : undefined,
+        departureAirport: r.departure?.airport,
+        arrivalAirport: r.arrival?.airport,
+        scheduledDeparture: r.departure?.scheduled,
+      }));
+    }
+  }
+
   // ── Synthesis (Groq) ────────────────────────────────────────────────────────
-  const aiSynthesis = await synthesizeRoute(partialPlan);
+  const aiSynthesis = await synthesizeRoute({
+    ...partialPlan,
+    flightAlternatives,
+  });
 
   // ── N3: Enqueue scraper job for flight/bus prices (async) ───────────────────
   let scrapeJobId: string | undefined;
@@ -108,6 +152,7 @@ export async function POST(req: NextRequest) {
     weather: weather ?? undefined,
     transitFeeds,
     aiSynthesis,
+    flightAlternatives,
     tags: intent.interests,
     estimatedBudget: { currency: intent.currency, amount: 0 },
     generatedAt: new Date().toISOString(),

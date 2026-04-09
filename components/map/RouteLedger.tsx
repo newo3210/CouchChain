@@ -119,6 +119,28 @@ export default function RouteLedger({ plan, scrapePending, freshnessLabel }: Pro
         </div>
       )}
 
+      {plan.flightAlternatives && plan.flightAlternatives.length > 0 && (
+        <div className="p-3 rounded-lg bg-[#eef2f7] border border-[#d0d9e6] text-xs space-y-1.5">
+          <span className="font-medium text-[#1a1a1a]">
+            Vuelos (Aviationstack)
+          </span>
+          <ul className="space-y-1 text-[#5c5c5c] font-mono leading-relaxed">
+            {plan.flightAlternatives.slice(0, 6).map((f, i) => (
+              <li key={i}>
+                {f.airline ?? "—"}{" "}
+                {f.flightNumber && `· ${f.flightNumber}`}
+                {f.scheduledDeparture && (
+                  <span className="text-[#8a8a8a]">
+                    {" "}
+                    · {f.scheduledDeparture}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="text-xs text-[#8a8a8a] pt-2 border-t border-[#E8E8E8]">
         Presupuesto estimado: {plan.estimatedBudget.currency}{" "}
         {plan.estimatedBudget.amount > 0

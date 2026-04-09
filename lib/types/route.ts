@@ -59,6 +59,16 @@ export interface ScrapeJob {
   result?: TransportSegment[];
 }
 
+/** Opciones de vuelo vía Aviationstack (cuando hay IATA en el intent). */
+export interface FlightAlternative {
+  airline?: string;
+  flightNumber?: string;
+  departureAirport?: string;
+  arrivalAirport?: string;
+  scheduledDeparture?: string;
+  source: "aviationstack";
+}
+
 export interface ParsedIntent {
   origin: string;
   destination: string;
@@ -67,6 +77,9 @@ export interface ParsedIntent {
   interests: string[];
   departureDate?: string; // ISO-8601 or partial like "next-week"
   durationDays?: number;
+  /** IATA opcionales si el usuario los menciona (p. ej. BCN, MAD). */
+  dep_iata?: string;
+  arr_iata?: string;
   rawQuery: string;
 }
 
@@ -80,6 +93,8 @@ export interface RoutePlan {
   weather?: Weather;
   transitFeeds: TransitFeed[];
   scrapeJob?: ScrapeJob;
+  /** Comparación / fallback de vuelos (Aviationstack u otras fuentes). */
+  flightAlternatives?: FlightAlternative[];
   aiSynthesis: string;
   tags: string[];
   estimatedBudget: {

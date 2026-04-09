@@ -1,0 +1,10 @@
+{
+  "actorSpecification": 1,
+  "name": "couchchain-price-scraper",
+  "title": "CouchChain — stub de precios (N3)",
+  "description": "Actor mínimo para el monorepo CouchChain. Sustituir Crawlee cuando definas el sitio objetivo. Input alineado con enqueueScraperJob.",
+  "version": "0.0.1",
+  "dockerfile": "./Dockerfile",
+  "readme": "./README.md",
+  "input": "./.actor/input_schema.json"
+}

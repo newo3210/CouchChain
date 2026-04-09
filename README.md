@@ -46,16 +46,19 @@ npx prisma migrate dev --name init
 ### 5. Levantar el stack
 
 Terminal 1 — servidor Next.js:
+
 ```bash
 npm run dev
 ```
 
 Terminal 2 — worker de scraping (requiere Redis):
+
 ```bash
 npm run worker
 ```
 
 Redis local (Docker):
+
 ```bash
 docker run -d -p 6379:6379 redis:alpine
 ```
@@ -64,17 +67,19 @@ docker run -d -p 6379:6379 redis:alpine
 
 ## Stack (Blueprint v2.0)
 
-| Capa | Tecnología |
-|------|------------|
-| Frontend | Next.js (App Router), React, Tailwind, Leaflet |
-| IA | Groq (Llama 3.3 70B), prompts JSON |
-| Geocoding / ruta N0 | Photon + OSRM |
-| Clima N1 | Open-Meteo |
-| Transporte público N2 | TransitLand |
-| Precios N3 | Apify + Crawlee local, BullMQ + Redis |
-| Cadena | Etherlink testnet: `RoutePassport` + `TrustRegistry` |
-| IPFS | Pinata |
-| Datos | PostgreSQL + Prisma |
+
+| Capa                  | Tecnología                                           |
+| --------------------- | ---------------------------------------------------- |
+| Frontend              | Next.js (App Router), React, Tailwind, Leaflet       |
+| IA                    | Groq (Llama 3.3 70B), prompts JSON                   |
+| Geocoding / ruta N0   | Photon + OSRM                                        |
+| Clima N1              | Open-Meteo                                           |
+| Transporte público N2 | TransitLand                                          |
+| Precios N3            | Apify + Crawlee local, BullMQ + Redis                |
+| Cadena                | Etherlink testnet: `RoutePassport` + `TrustRegistry` |
+| IPFS                  | Pinata                                               |
+| Datos                 | PostgreSQL + Prisma                                  |
+
 
 ---
 
@@ -129,11 +134,13 @@ docs/
 
 ## Documentación
 
-| Documento | Contenido |
-|-----------|-----------|
-| [docs/BLUEPRINT-TECNICO.md](docs/BLUEPRINT-TECNICO.md) | Arquitectura del protocolo v2.0 |
-| [docs/REGISTROS-Y-APIS.md](docs/REGISTROS-Y-APIS.md) | Cuentas, APIs, variables de entorno |
+
+| Documento                                                                  | Contenido                                      |
+| -------------------------------------------------------------------------- | ---------------------------------------------- |
+| [docs/BLUEPRINT-TECNICO.md](docs/BLUEPRINT-TECNICO.md)                     | Arquitectura del protocolo v2.0                |
+| [docs/REGISTROS-Y-APIS.md](docs/REGISTROS-Y-APIS.md)                       | Cuentas, APIs, variables de entorno            |
 | [docs/llm-prepared/COUCHCHAIN-LLM.md](docs/llm-prepared/COUCHCHAIN-LLM.md) | Briefing para agentes LLM (UX, flujos, tokens) |
+
 
 ---
 

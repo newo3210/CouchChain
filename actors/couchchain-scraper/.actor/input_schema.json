@@ -1,0 +1,28 @@
+{
+  "title": "Entrada scraper CouchChain",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "origin": {
+      "title": "Origen",
+      "type": "string",
+      "description": "Texto de lugar de salida (ciudad, país, etc.)"
+    },
+    "destination": {
+      "title": "Destino",
+      "type": "string",
+      "description": "Texto de lugar de llegada"
+    },
+    "departureDate": {
+      "title": "Fecha de salida",
+      "type": "string",
+      "description": "Opcional — ISO o texto que use tu worker"
+    },
+    "sessionId": {
+      "title": "ID de sesión",
+      "type": "string",
+      "description": "Opcional — correlación con la app (mismo campo que enqueueScraperJob)"
+    }
+  },
+  "required": ["origin", "destination"]
+}

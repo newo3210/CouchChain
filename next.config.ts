@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
+  transpilePackages: ["leaflet-routing-machine"],
   // Packages that use Node.js APIs must not be bundled for the edge runtime
   serverExternalPackages: ["pg", "bullmq", "ioredis", "@prisma/client"],
 };
