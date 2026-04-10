@@ -17,6 +17,8 @@ export interface TransportSegment {
   to: NamedCoord;
   durationMinutes: number;
   distanceKm?: number;
+  /** Geometría OSRM/GraphHopper [lat,lng][] para dibujar en mapa sin LRM (no persistir en IPFS si es muy grande). */
+  geometry?: [number, number][];
   price?: {
     amount: number;
     currency: string;

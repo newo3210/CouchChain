@@ -116,6 +116,140 @@ function firstFeatureToNamedCoord(
   return { name, lat, lng };
 }
 
+function haversineKm(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): number {
+  const R = 6371;
+  const toR = (d: number) => (d * Math.PI) / 180;
+  const dLat = toR(b.lat - a.lat);
+  const dLon = toR(b.lng - a.lng);
+  const la = toR(a.lat);
+  const lb = toR(b.lat);
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(la) * Math.cos(lb) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+
+function featureToNamedCoordSingle(
+  f: PhotonGeoJsonFeature,
+  fallbackQuery: string,
+): NamedCoord | null {
+  if (!f?.geometry?.coordinates) return null;
+  const [lng, lat] = f.geometry.coordinates;
+  const props = f.properties ?? {};
+  const name =
+    (typeof props.name === "string" && props.name) ||
+    (typeof props.city === "string" && props.city) ||
+    (typeof props.country === "string" && props.country) ||
+    fallbackQuery;
+  return { name, lat, lng };
+}
+
+/**
+ * Elige el hit de Photon más apto para viajes entre ciudades (evita calles
+ * homónimas cerca del origen cuando el destino es otra ciudad o país).
+ */
+export function pickBestTravelFeature(
+  features: PhotonGeoJsonFeature[],
+  query: string,
+  origin: NamedCoord | undefined,
+  role: "origin" | "destination",
+): PhotonGeoJsonFeature | null {
+  if (!features.length) return null;
+  const qNorm = query.split(",")[0].trim().toLowerCase();
+
+  const scored = features.map((f, idx) => {
+    const p = f.properties ?? {};
+    let score = 0;
+    const name = typeof p.name === "string" ? p.name.toLowerCase() : "";
+    const osmKey = String(p.osm_key ?? "").toLowerCase();
+    const osmVal = String(p.osm_value ?? "").toLowerCase();
+    const ptype = String((p as { type?: string }).type ?? "").toLowerCase();
+
+    if (
+      osmKey === "place" &&
+      ["city", "town", "village", "state", "country", "region"].includes(
+        osmVal,
+      )
+    ) {
+      score += 120;
+    }
+    if (osmKey === "boundary" && osmVal === "administrative") score += 100;
+    if (ptype === "city" || ptype === "administrative") score += 90;
+    if (osmKey === "highway") score -= 85;
+    if (osmKey === "place" && osmVal === "suburb") score += 35;
+    if (osmKey === "place" && osmVal === "neighbourhood") score += 20;
+
+    if (
+      name &&
+      (name === qNorm || qNorm.includes(name) || name.includes(qNorm))
+    ) {
+      score += 55;
+    }
+
+    if (origin?.lat != null && origin.lng != null && f.geometry?.coordinates) {
+      const [lng, lat] = f.geometry.coordinates;
+      const distKm = haversineKm(origin, { lat, lng });
+      if (role === "destination" && distKm > 75) {
+        score += Math.min(55, Math.max(0, Math.log10(distKm / 75) * 38));
+      }
+    }
+
+    score -= idx * 1.5;
+    return { f, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0]?.f ?? null;
+}
+
+/**
+ * Geocodificación para extremos de ruta de viaje: sin sesgo geográfico,
+ * varios candidatos y ranking por tipo OSM (ciudad > calle) y lejanía al origen en destino.
+ */
+export async function geocodeTravelEndpointDiagnostics(
+  query: string,
+  options: GeocodeOptions & {
+    origin?: NamedCoord;
+    role: "origin" | "destination";
+  },
+): Promise<GeocodeDiagnostics> {
+  const envLim = process.env.PHOTON_LIMIT ? Number(process.env.PHOTON_LIMIT) : 12;
+  const limit = Math.min(50, Math.max(8, options.limit ?? envLim));
+  const { origin, role, bias: _b, ...rest } = options;
+  const url = buildPhotonSearchUrl(query.trim(), {
+    ...rest,
+    limit,
+    bias: undefined,
+  });
+  try {
+    const res = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      return { coord: null, httpStatus: res.status, featureCount: 0 };
+    }
+    const data = (await res.json()) as PhotonGeoJsonResponse;
+    const features =
+      data.type === "FeatureCollection" && Array.isArray(data.features)
+        ? data.features
+        : [];
+    const best =
+      pickBestTravelFeature(features, query, origin, role) ?? features[0];
+    const coord = best ? featureToNamedCoordSingle(best, query) : null;
+    return {
+      coord,
+      httpStatus: res.status,
+      featureCount: features.length,
+    };
+  } catch {
+    return { coord: null, httpStatus: "network", featureCount: 0 };
+  }
+}
+
 export type GeocodeDiagnostics = {
   coord: NamedCoord | null;
   httpStatus: number | "network";

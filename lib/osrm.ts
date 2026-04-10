@@ -38,7 +38,7 @@ export async function getMultiStopRoute(
     const segments: TransportSegment[] = [];
     for (let i = 0; i < waypoints.length - 1; i++) {
       const leg = await getDrivingRoute(waypoints[i], waypoints[i + 1]);
-      if (leg) segments.push(leg.segment);
+      if (leg) segments.push({ ...leg.segment, geometry: leg.polyline });
     }
     return { polyline, segments };
   } catch {

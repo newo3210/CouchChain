@@ -10,8 +10,9 @@ import type { Control, Map as LeafletMap, Marker as LeafletMarker } from "leafle
 import { RoutePlan, Waypoint } from "@/lib/types/route";
 import "leaflet-routing-machine/dist/leaflet-routing-machine.css";
 
+/** LRM puede mostrar pasos de giro; por defecto usamos solo la polilínea OSRM del plan. */
 const useLeafletRoutingMachine =
-  process.env.NEXT_PUBLIC_USE_LEAFLET_ROUTING_MACHINE !== "false";
+  process.env.NEXT_PUBLIC_USE_LEAFLET_ROUTING_MACHINE === "true";
 
 const OSRM_SERVICE_URL =
   process.env.NEXT_PUBLIC_LEAFLET_ROUTING_SERVICE_URL ??
@@ -193,9 +194,25 @@ const RouteMap = forwardRef<RouteMapHandle, RouteMapProps>(function RouteMap(
       }
     } else {
       const allCoords: [number, number][] = [];
+      const pushPt = (lat: number, lng: number) => {
+        const last = allCoords[allCoords.length - 1];
+        if (
+          !last ||
+          Math.abs(last[0] - lat) > 1e-7 ||
+          Math.abs(last[1] - lng) > 1e-7
+        ) {
+          allCoords.push([lat, lng]);
+        }
+      };
       for (const seg of plan.transportSegments) {
-        allCoords.push([seg.from.lat, seg.from.lng]);
-        allCoords.push([seg.to.lat, seg.to.lng]);
+        if (seg.geometry?.length) {
+          for (const [lat, lng] of seg.geometry) {
+            pushPt(lat, lng);
+          }
+        } else {
+          pushPt(seg.from.lat, seg.from.lng);
+          pushPt(seg.to.lat, seg.to.lng);
+        }
       }
       if (allCoords.length >= 2) {
         const pl = L.polyline(allCoords, {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { parseIntentWithMeta, synthesizeRoute } from "@/lib/groq";
 import { geocodeNominatim } from "@/lib/nominatim";
-import { geocodeDiagnostics } from "@/lib/photon";
+import { geocodeTravelEndpointDiagnostics } from "@/lib/photon";
 import { getRoute } from "@/lib/osrm";
 import { getScheduledFlights } from "@/lib/aviationstack";
 import { getWeather } from "@/lib/open-meteo";
@@ -96,15 +96,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const photonLimit = process.env.PHOTON_LIMIT
-    ? Number(process.env.PHOTON_LIMIT)
-    : undefined;
   const photonLang = process.env.PHOTON_LANG;
+  /** Varios hits Photon + ranking por ciudad/admin (sin sesgar el destino cerca del origen). */
+  const travelPhotonLimit = 12;
 
   // ── N0: Geocode (Photon primero; Nominatim como respaldo — política ~1 req/s en Nominatim)
-  const originDiag = await geocodeDiagnostics(intent.origin, {
+  const originDiag = await geocodeTravelEndpointDiagnostics(intent.origin, {
     lang: photonLang,
-    limit: photonLimit,
+    limit: travelPhotonLimit,
+    role: "origin",
   });
   let originCoord = originDiag.coord;
   let nominatimOriginTried = false;
@@ -113,12 +113,11 @@ export async function POST(req: NextRequest) {
     nominatimOriginTried = true;
   }
 
-  const destDiag = await geocodeDiagnostics(intent.destination, {
-    bias: originCoord
-      ? { lat: originCoord.lat, lng: originCoord.lng }
-      : undefined,
+  const destDiag = await geocodeTravelEndpointDiagnostics(intent.destination, {
     lang: photonLang,
-    limit: photonLimit,
+    limit: travelPhotonLimit,
+    role: "destination",
+    origin: originCoord ?? undefined,
   });
   let destCoord = destDiag.coord;
   let nominatimDestTried = false;
@@ -198,7 +197,9 @@ export async function POST(req: NextRequest) {
     origin: originCoord,
     destination: destCoord,
     waypoints,
-    transportSegments: routeResult ? [routeResult.segment] : [],
+    transportSegments: routeResult
+      ? [{ ...routeResult.segment, geometry: routeResult.polyline }]
+      : [],
     weather: weather ?? undefined,
     transitFeeds: transitFeeds,
     parsedIntent: intentWithIata,
@@ -275,7 +276,9 @@ export async function POST(req: NextRequest) {
     origin: originCoord,
     destination: destCoord,
     waypoints,
-    transportSegments: routeResult ? [routeResult.segment] : [],
+    transportSegments: routeResult
+      ? [{ ...routeResult.segment, geometry: routeResult.polyline }]
+      : [],
     weather: weather ?? undefined,
     transitFeeds,
     aiSynthesis,

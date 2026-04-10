@@ -55,7 +55,9 @@ export default function MintButton({ plan, creatorAddress, onMinted }: Props) {
           origin: plan.origin,
           destination: plan.destination,
           waypoints: plan.waypoints,
-          transport_segments: plan.transportSegments,
+          transport_segments: plan.transportSegments.map(
+            ({ geometry: _g, ...seg }) => seg,
+          ),
           estimated_budget: plan.estimatedBudget,
         },
         metadata: {
