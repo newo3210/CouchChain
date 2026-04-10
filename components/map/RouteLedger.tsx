@@ -243,6 +243,7 @@ export default function RouteLedger({
   const flightQuotes = plan?.scrapedFlightQuotes ?? [];
   const [flightPick, setFlightPick] = useState(0);
   const [expandedWp, setExpandedWp] = useState<string | null>(null);
+  const [gatitoFeedOpen, setGatitoFeedOpen] = useState(false);
 
   useEffect(() => {
     setFlightPick((p) =>
@@ -252,6 +253,7 @@ export default function RouteLedger({
 
   useEffect(() => {
     setExpandedWp(null);
+    setGatitoFeedOpen(false);
   }, [plan?.id]);
 
   if (!plan) {
@@ -265,8 +267,47 @@ export default function RouteLedger({
   const toggleWp = (id: string) =>
     setExpandedWp((x) => (x === id ? null : id));
 
+  const gatitoMsg = plan.aiSynthesis?.trim() ?? "";
+  const gatitoExpandable = gatitoMsg.length > 140;
+
   return (
     <div className="px-3 py-4 space-y-3 max-w-lg mx-auto w-full">
+      {gatitoMsg ? (
+        <motion.button
+          type="button"
+          layout
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={bubbleSpring}
+          onClick={() =>
+            gatitoExpandable ? setGatitoFeedOpen((o) => !o) : undefined
+          }
+          className={`flex w-full items-start gap-3 rounded-2xl border-2 border-[#1e293b] bg-[#1e293b] px-4 py-3 text-left shadow-[0_8px_28px_-8px_rgba(15,23,42,0.45)] transition hover:bg-[#0f172a] hover:border-[#0f172a] ${
+            gatitoExpandable ? "cursor-pointer active:scale-[0.99]" : "cursor-default"
+          }`}
+          aria-expanded={gatitoExpandable ? gatitoFeedOpen : undefined}
+        >
+          <Sparkles className="h-5 w-5 shrink-0 text-[#94a3b8] mt-0.5" aria-hidden />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[10px] font-semibold uppercase tracking-wide text-[#94a3b8] mb-1">
+              Gatito
+            </span>
+            <span
+              className={`block text-sm font-medium leading-snug text-[#fafaf9] ${
+                gatitoExpandable && !gatitoFeedOpen ? "line-clamp-3" : ""
+              }`}
+            >
+              {gatitoMsg}
+            </span>
+            {gatitoExpandable ? (
+              <span className="mt-1.5 block text-[10px] text-[#94a3b8]">
+                {gatitoFeedOpen ? "Tocá para menos" : "Tocá para ver todo"}
+              </span>
+            ) : null}
+          </span>
+        </motion.button>
+      ) : null}
+
       <div className="flex items-center justify-between gap-2 px-1">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-[#475569]">
           Dock · Paradas

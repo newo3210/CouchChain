@@ -429,41 +429,25 @@ export async function parseIntent(userMessage: string): Promise<ParsedIntent> {
 
 // ─── Synthesis ────────────────────────────────────────────────────────────────
 
-const SYNTH_SYSTEM = `Eres el Gatito de CouchChain, un asistente de rutas amigable y conciso.
-Tienes los datos de una ruta (JSON). Genera una respuesta conversacional en español:
-1. Resumen de la ruta en 2-3 oraciones.
-2. Recomendación de clima si está disponible.
-3. Transporte: NO listes todos los operadores. Si hay muchos, decí solo cuántos hay y que el usuario puede verlos y elegir en el panel «Itinerario» a la derecha; como mucho nombrá 2 ejemplos.
-4. Un consejo relacionado a los intereses del viajero.
-5. Vuelos: si hay datos de itinerario de aerolíneas en el JSON, mencioná 1–2 sin inventar precios; los precios comparados aparecen en el panel cuando el buscador termina.
-Máximo 150 palabras. Tono cálido y directo.`;
+const SYNTH_SYSTEM = `Sos el Gatito de CouchChain. Respondé en español en 1 o 2 oraciones cortas (máximo ~35 palabras).
+Prioridad: si en el JSON hay clima, empezá o incluí la temperatura y condición (dato real del JSON).
+Podés mencionar de paso el trayecto origen→destino sin números: NO cites kilómetros, NO duraciones en minutos/horas, NO listes operadores ni vuelos (eso ya está en la app).
+Sin giros de manejo ni calles. Sin markdown. Tono breve y amable.`;
 
 export async function synthesizeRoute(plan: Partial<RoutePlan>): Promise<string> {
   const feeds = plan.transitFeeds ?? [];
-  const sampleOps = feeds.slice(0, 3).map((f) => f.operatorName);
   const planSummary = JSON.stringify({
-    origin: plan.origin?.name,
-    destination: plan.destination?.name,
-    segments: plan.transportSegments?.map((s) => ({
-      mode: s.mode,
-      duration: s.durationMinutes + " min",
-      distance: s.distanceKm ? s.distanceKm + " km" : undefined,
-    })),
+    from: plan.origin?.name,
+    to: plan.destination?.name,
     weather: plan.weather
-      ? `${plan.weather.temperatureC}°C, ${plan.weather.condition}`
+      ? {
+          tempC: plan.weather.temperatureC,
+          condition: plan.weather.condition,
+        }
       : null,
-    transitOperatorCount: feeds.length,
-    transitOperatorsSample: sampleOps,
-    interests: plan.parsedIntent?.interests,
-    budget: plan.parsedIntent?.budget,
-    iata: {
-      dep: plan.parsedIntent?.dep_iata,
-      arr: plan.parsedIntent?.arr_iata,
-    },
-    flights: plan.flightAlternatives?.map(
-      (f) =>
-        [f.airline, f.flightNumber, f.scheduledDeparture].filter(Boolean).join(" "),
-    ),
+    interests: plan.parsedIntent?.interests?.slice(0, 4),
+    hasTransitHints: feeds.length > 0,
+    hasFlightHints: Boolean(plan.flightAlternatives?.length),
   });
 
   try {
@@ -473,8 +457,8 @@ export async function synthesizeRoute(plan: Partial<RoutePlan>): Promise<string>
         { role: "system", content: SYNTH_SYSTEM },
         { role: "user", content: planSummary },
       ],
-      temperature: 0.7,
-      max_tokens: 300,
+      temperature: 0.55,
+      max_tokens: 96,
     });
     return completion.choices[0]?.message?.content ?? "¡Ruta lista!";
   } catch {

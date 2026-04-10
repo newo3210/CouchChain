@@ -100,10 +100,6 @@ export default function GatitoAssistant({
 
       const data = payload as RoutePlanResponse;
       setState("success");
-      setCaption(
-        data.plan.aiSynthesis.slice(0, 280) +
-          (data.plan.aiSynthesis.length > 280 ? "…" : ""),
-      );
       onRoutePlan?.(data.plan, data.scrapeJobId);
       setTimeout(() => setState("idle"), 2800);
     } catch (err) {
@@ -152,7 +148,8 @@ export default function GatitoAssistant({
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="mt-2 px-3 text-xs leading-relaxed text-[#475569] line-clamp-4"
+            className="mt-2 px-3 text-xs leading-relaxed text-[#b91c1c] line-clamp-4"
+            role="alert"
           >
             {caption}
           </motion.p>
@@ -265,7 +262,8 @@ export default function GatitoAssistant({
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              className="relative z-30 mt-2 px-3 text-xs leading-relaxed text-[#475569] line-clamp-4"
+              className="relative z-30 mt-2 px-3 text-xs leading-relaxed text-[#b91c1c] line-clamp-4"
+              role="alert"
             >
               {caption}
             </motion.p>
